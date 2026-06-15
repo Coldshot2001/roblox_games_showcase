@@ -1,0 +1,1 @@
+A Factorio-like game in which the player builds a factory on their plot from which they generate mana and balance their flux intake. The code is not fully posted due to the fact that I want to complete it.

@@ -1,0 +1,1 @@
+This is a simple greedy meshing system for 3D noise, from a very long time ago when I was interested in creating minecraft clones.
