@@ -1,18 +1,25 @@
+--!strict
+
 local HttpService = game:GetService("HttpService")
 local ServerScriptService = game:GetService("ServerScriptService")
+
 local BuddyDB = require(ServerScriptService:WaitForChild("BuddyDB"))
 local GearDB = require(ServerScriptService:WaitForChild("GearDB"))
 local BattleSystem = require(ServerScriptService:WaitForChild("BattleSystem"))
 
-function CreateBuddy(DataTable)
+local function copyStats(stats: any): any
+	return table.clone(stats)
+end
+
+local function CreateBuddy(dataTable: any): any
 	local newBuddy = {}
-	newBuddy.Stats = DataTable.Stats
-	newBuddy.Abilities = DataTable.Abilities or {}
+	newBuddy.Stats = copyStats(dataTable.Stats)
+	newBuddy.Abilities = dataTable.Abilities or {}
 	newBuddy.Gear = nil
 	newBuddy.Level = 1
 	newBuddy.Experience = 0
 	newBuddy.RequiredExperience = 2
-	newBuddy.Model = DataTable.Model:Clone()
+	newBuddy.Model = dataTable.Model:Clone()
 	newBuddy.UUID = HttpService:GenerateGUID(false)
 
 	return newBuddy
@@ -24,19 +31,21 @@ NoobWithSword.Gear = GearDB["1"]
 local GuestWithTrowel = CreateBuddy(BuddyDB["1"])
 GuestWithTrowel.Gear = GearDB["2"]
 
-local ta = {
+local playerTeam = {
 	NoobWithSword,
 	CreateBuddy(BuddyDB["1"]),
 }
-local tb = {
+local enemyTeam = {
 	GuestWithTrowel,
 	CreateBuddy(BuddyDB["2"]),
 	CreateBuddy(BuddyDB["1"]),
 }
-local test = BattleSystem.new(ta, tb)
+
+local demoBattle = BattleSystem.new(playerTeam, enemyTeam)
 
 local outcome
 repeat
-	outcome = test:ProcessTurn()
+	outcome = demoBattle:ProcessTurn()
 until outcome ~= "Undetermined"
-print(outcome)
+
+print(string.format("Demo battle outcome: %s", outcome))

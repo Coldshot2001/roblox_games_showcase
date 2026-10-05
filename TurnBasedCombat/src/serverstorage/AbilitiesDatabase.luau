@@ -2,7 +2,7 @@ local abilities = {}
 abilities.Abilities = {
 	["Cyber Dawg"] = {
 		[1] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] -= 1
 				if target["Current Health"] < 0 then
 					target["Current Health"] = 0
@@ -23,7 +23,7 @@ abilities.Abilities = {
 		--7th index is the name of the skill
 		--if the base cooldown is "-1" then its a passive
 		[2] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] += 1
 				if target["Current Health"] > target["Health"] then
 					target["Current Health"] = target["Health"]
@@ -38,8 +38,7 @@ abilities.Abilities = {
 		},
 
 		[3] = {
-			["Function"] = function(self, target, chars)
-				print("its pASSIVE ", target)
+			["Function"] = function(_self, _target, _chars)
 			end,
 			["Type"] = "Passive",
 			["CurCD"] = -1,
@@ -51,7 +50,7 @@ abilities.Abilities = {
 	},
 	["Claw Dude"] = {
 		[1] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] -= 1000
 				if target["Current Health"] < 0 then
 					target["Current Health"] = 0
@@ -66,7 +65,7 @@ abilities.Abilities = {
 		},
 
 		[2] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] += 1
 				if target["Current Health"] > target["Health"] then
 					target["Current Health"] = target["Health"]
@@ -81,8 +80,7 @@ abilities.Abilities = {
 		},
 
 		[3] = {
-			["Function"] = function(self, target, chars)
-				print("its pASSIVE ", target)
+			["Function"] = function(_self, _target, _chars)
 			end,
 			["Type"] = "Passive",
 			["CurCD"] = -1,
@@ -94,7 +92,7 @@ abilities.Abilities = {
 	},
 	["Palace Sentry"] = {
 		[1] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] -= 1000
 				if target["Current Health"] < 0 then
 					target["Current Health"] = 0
@@ -109,7 +107,7 @@ abilities.Abilities = {
 		},
 
 		[2] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] += 1
 				if target["Current Health"] > target["Health"] then
 					target["Current Health"] = target["Health"]
@@ -124,8 +122,7 @@ abilities.Abilities = {
 		},
 
 		[3] = {
-			["Function"] = function(self, target, chars)
-				print("its pASSIVE ", target)
+			["Function"] = function(_self, _target, _chars)
 			end,
 			["Type"] = "Passive",
 			["CurCD"] = -1,
@@ -137,8 +134,7 @@ abilities.Abilities = {
 	},
 	["Blue Gun Dude"] = {
 		[1] = {
-			["Function"] = function(self, target, chars)
-				print(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] -= 1
 				if target["Current Health"] < 0 then
 					target["Current Health"] = 0
@@ -153,7 +149,7 @@ abilities.Abilities = {
 		},
 
 		[2] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] += 1
 				if target["Current Health"] > target["Health"] then
 					target["Current Health"] = target["Health"]
@@ -168,8 +164,7 @@ abilities.Abilities = {
 		},
 
 		[3] = {
-			["Function"] = function(self, target, chars)
-				print("its pASSIVE ", target)
+			["Function"] = function(_self, _target, _chars)
 			end,
 			["Type"] = "Passive",
 			["CurCD"] = -1,
@@ -181,7 +176,7 @@ abilities.Abilities = {
 	},
 	["Punching Dummy"] = {
 		[1] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] -= 1
 				if target["Current Health"] < 0 then
 					target["Current Health"] = 0
@@ -196,7 +191,7 @@ abilities.Abilities = {
 		},
 
 		[2] = {
-			["Function"] = function(self, target, chars)
+			["Function"] = function(_self, target, _chars)
 				target["Current Health"] += 1
 				if target["Current Health"] > target["Health"] then
 					target["Current Health"] = target["Health"]
@@ -211,8 +206,7 @@ abilities.Abilities = {
 		},
 
 		[3] = {
-			["Function"] = function(self, target, chars)
-				print("its pASSIVE ", target)
+			["Function"] = function(_self, _target, _chars)
 			end,
 			["Type"] = "Passive",
 			["CurCD"] = -1,

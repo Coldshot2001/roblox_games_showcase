@@ -15,8 +15,8 @@ local function distance(x1, y1, x2, y2)
 	return math.sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2)
 end
 
---Class
 local visualBorders = {}
+local nextVisualId = 0
 local CombatBorder = game:GetService("ReplicatedStorage"):WaitForChild("Border")
 local function CreateVisualBorder(radius, pos, color)
 	local NewBorder = CombatBorder:Clone()
@@ -24,19 +24,32 @@ local function CreateVisualBorder(radius, pos, color)
 	NewBorder.Decal.Transparency = 0.3
 	NewBorder.Size = Vector3.new(radius * 2 + VISUAL_OFFSET, 1, radius * 2 + VISUAL_OFFSET)
 	NewBorder.Position = Vector3.new(pos.X, -0.5, pos.Z)
-	visualBorders[#visualBorders + 1] = NewBorder
+	nextVisualId += 1
+	visualBorders[nextVisualId] = NewBorder
 	NewBorder.Parent = workspace
-	return #visualBorders
+	return nextVisualId
 end
 
 local function UpdateVisualBorder(ID, radius, pos, color)
 	local CurBorder = visualBorders[ID]
+	if not CurBorder then
+		return
+	end
 	CurBorder.Size = Vector3.new(radius * 2 + VISUAL_OFFSET, 1, radius * 2 + VISUAL_OFFSET)
 	CurBorder.Position = Vector3.new(pos.X, -0.5, pos.Z)
 	CurBorder.Decal.Color3 = color
 end
 
+local function DestroyVisualBorder(ID)
+	local CurBorder = visualBorders[ID]
+	if CurBorder then
+		CurBorder:Destroy()
+		visualBorders[ID] = nil
+	end
+end
+
 local collisionBorders = {}
+local nextCollisionId = 0
 local function CollisionCheck()
 	local char = plr.Character or plr.CharacterAdded:Wait()
 	local HRP = char:WaitForChild("HumanoidRootPart")
@@ -62,12 +75,13 @@ local function CollisionCheck()
 end
 
 local function AddCollisionBorder(radius, pos)
-	collisionBorders[#collisionBorders + 1] = { center = { x = pos.X, y = pos.Z }, radius = radius }
-	return #collisionBorders
+	nextCollisionId += 1
+	collisionBorders[nextCollisionId] = { center = { x = pos.X, y = pos.Z }, radius = radius }
+	return nextCollisionId
 end
 
 local function RemoveCollisionBorder(ID)
-	table.remove(collisionBorders, ID)
+	collisionBorders[ID] = nil
 end
 
 local combatPoints = {}
@@ -80,8 +94,8 @@ local function AddCombatPoint(PointTable)
 	local CombatId = #combatPoints + 1
 	local NewPrompt = Prompt:Clone()
 	NewPrompt.MaxActivationDistance = PointTable["Radius"] / 1.5
-	NewPrompt.Triggered:Connect(function(plr)
-		local char = plr.Character or plr.CharacterAdded:Wait()
+	NewPrompt.Triggered:Connect(function(triggeringPlayer)
+		local char = triggeringPlayer.Character or triggeringPlayer.CharacterAdded:Wait()
 		local HRP = char:WaitForChild("HumanoidRootPart")
 		if (HRP.Position - NewPoint.Position).Magnitude <= PointTable["Radius"] / 1.5 then
 			CombatRemote:FireServer(CombatId)
@@ -117,11 +131,13 @@ local function SetupPlayerInterfaceWithData(NEW_DATA)
 end
 
 local movingBorders = {}
+local nextMovingId = 0
 local function CreateMovingBorder(target, color)
 	local HRP = target:WaitForChild("HumanoidRootPart")
 
 	local VisualBorderID = CreateVisualBorder(PLR_DATA["Movement"] * 3, HRP.Position, Color3.fromRGB(255, 0, 0))
-	local MovingBorderID = #movingBorders + 1
+	nextMovingId += 1
+	local MovingBorderID = nextMovingId
 	movingBorders[MovingBorderID] = {
 		["VisualBorderID"] = VisualBorderID,
 		["Position"] = HRP.Position,
@@ -134,7 +150,7 @@ local function CreateMovingBorder(target, color)
 end
 
 local function MovingBorderLogic()
-	RunService:BindToRenderStep("CombatPointsVisual", Enum.RenderPriority.Last.Value + 3, function(deltaTime)
+	RunService:BindToRenderStep("MovingBorderVisual", Enum.RenderPriority.Last.Value + 3, function(_deltaTime)
 		for _, circle in pairs(movingBorders) do
 			circle["Position"] = circle["Target"].Position
 			local distance_to_center = math.clamp(
@@ -149,59 +165,56 @@ local function MovingBorderLogic()
 	end)
 end
 
-function generateRandomPoint(largerOriginX, largerOriginY, largerRadius, smallerOriginX, smallerOriginY, smallerRadius)
-	local x, y
-	repeat
-		-- Generate random angle and radius
-		local angle = math.random() * 2 * math.pi
-		local radius = math.sqrt(math.random() * largerRadius ^ 2)
-
-		-- Convert polar coordinates to Cartesian coordinates
-		x = largerOriginX + radius * math.cos(angle)
-		y = largerOriginY + radius * math.sin(angle)
-	until (x - smallerOriginX) ^ 2 + (y - smallerOriginY) ^ 2 > smallerRadius ^ 2
-
-	return x, y
-end
-
 CollisionCheck()
 CombatPointLogic()
 MovingBorderLogic()
+
+local fightVisualIds = {}
+local fightCollisionIds = {}
+local fightMovingIds = {}
+
+local function EndFightVisuals()
+	for _, id in ipairs(fightVisualIds) do
+		DestroyVisualBorder(id)
+	end
+	for _, id in ipairs(fightCollisionIds) do
+		RemoveCollisionBorder(id)
+	end
+	for _, id in ipairs(fightMovingIds) do
+		local moving = movingBorders[id]
+		if moving then
+			DestroyVisualBorder(moving["VisualBorderID"])
+			movingBorders[id] = nil
+		end
+	end
+	fightVisualIds = {}
+	fightCollisionIds = {}
+	fightMovingIds = {}
+	if PLR_DATA then
+		PlayerGui.Stats.AP.Text = tostring(PLR_DATA["AP"])
+	end
+end
+
+plr.CharacterRemoving:Connect(EndFightVisuals)
+
 CombatRemote.OnClientEvent:Connect(function(ID)
 	local char = plr.Character or plr.CharacterAdded:Wait()
 	local HRP = char:WaitForChild("HumanoidRootPart")
-	for i = 1, PLR_DATA["AP"] do
-		CreateVisualBorder(PLR_DATA["Movement"] * i, HRP.Position, PLR_DATA["Color"])
-	end
-	local circleID1 = AddCollisionBorder(PLR_DATA["Movement"] * PLR_DATA["AP"], HRP.Position)
-	local circleID2 = AddCollisionBorder(combatPoints[ID]["Radius"], combatPoints[ID]["Position"])
-	CreateMovingBorder(char, Color3.fromRGB(255, 0, 0))
 
-	--test
-	local a = Instance.new("Folder")
-	for i = 1, 105 do
-		local b = Instance.new("Part")
-		b.Parent = a
-		b.Size = Vector3.new(2, 2, 2)
-		b.Anchored = true
-		b.Color = Color3.fromRGB(170, 0, 255)
-		b.CanCollide = false
-		local x, z = generateRandomPoint(
-			combatPoints[ID]["Part"].Position.X,
-			combatPoints[ID]["Part"].Position.Z,
-			combatPoints[ID]["Radius"],
-			HRP.Position.X,
-			HRP.Position.Z,
-			PLR_DATA["Movement"] * 1.3
+	for i = 1, PLR_DATA["AP"] do
+		table.insert(
+			fightVisualIds,
+			CreateVisualBorder(PLR_DATA["Movement"] * i, HRP.Position, PLR_DATA["Color"])
 		)
-		b.Position = Vector3.new(x, 4, z)
 	end
-	a.Parent = workspace
-	--
+	table.insert(fightCollisionIds, AddCollisionBorder(PLR_DATA["Movement"] * PLR_DATA["AP"], HRP.Position))
+	table.insert(fightCollisionIds, AddCollisionBorder(combatPoints[ID]["Radius"], combatPoints[ID]["Position"]))
+	table.insert(fightMovingIds, CreateMovingBorder(char, Color3.fromRGB(255, 0, 0)))
+
 	combatPoints[ID]["Part"].CFrame = CF_REALLY_FAR_AWAY
 
 	local circleX, circleY = HRP.Position.X, HRP.Position.Z
-	while true do
+	while plr.Character and plr.Character.Parent do
 		task.wait()
 		local dist = distance(HRP.Position.X, HRP.Position.Z, circleX, circleY)
 		local timesOutside = math.ceil(math.max(0, (dist - PLR_DATA["Movement"]) / PLR_DATA["Movement"]))
@@ -212,6 +225,8 @@ CombatRemote.OnClientEvent:Connect(function(ID)
 			PlayerGui.Stats.AP.Text = string.format("%i", PLR_DATA["AP"])
 		end
 	end
+
+	EndFightVisuals()
 end)
 
 DataRemote.OnClientEvent:Connect(function(mode, ...)

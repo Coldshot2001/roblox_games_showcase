@@ -33,7 +33,7 @@ function Controls:StartUp(Player: Player)
 	end
 end
 
-function Controls:Move(actionName, inputState, inputObject)
+function Controls:Move(actionName, inputState, _inputObject)
 	if inputState ~= Enum.UserInputState.Begin then
 		return
 	end
@@ -56,14 +56,14 @@ function Controls:Move(actionName, inputState, inputObject)
 
 	MovePacket:Fire(dir)
 
-	Promise.fromEvent(Packets.MoveAckPacket.OnClientEvent, function(accepted, gridX, gridY, mapName)
+	Promise.fromEvent(Packets.MoveAckPacket.OnClientEvent, function()
 		return MOVEMENT_DEBOUNCE == true
 	end)
 		:timeout(5)
-		:andThen(function(accepted, gridX, gridY, mapName)
+		:andThen(function(_accepted, gridX, gridY, ackMapName)
 			local px, py = Visuals:GetLocalPosition()
 			if gridX ~= px or gridY ~= py then
-				Visuals:OnLocalPlayerMoved(false, gridX, gridY, mapName, nil)
+				Visuals:OnLocalPlayerMoved(false, gridX, gridY, ackMapName, nil)
 			end
 		end)
 		:catch(function()

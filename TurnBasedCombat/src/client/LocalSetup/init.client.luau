@@ -20,7 +20,7 @@ local function forceResetting(mode)
 			return game.StarterGui:SetCore("ResetButtonCallback", mode)
 		end)
 		if not success then
-			wait()
+			task.wait()
 		end
 	end
 end
@@ -69,7 +69,6 @@ function OverworldSetup()
 end
 
 local ModelName
---this is the only way i know to do this god please forgive me for this horribile code
 local oldspd
 local oldjmp
 function BattleState(_mob)
@@ -105,7 +104,7 @@ end
 
 function Encounter()
 	while InBattle == false do
-		wait(0.2)
+		task.wait(0.2)
 		for _, v in next, game.Workspace.Enemies:GetChildren() do
 			for _, Mob in next, v:GetChildren() do
 				if (player.Character.PrimaryPart.Position - Mob.Position).magnitude <= 5 and InBattle == false then
@@ -120,7 +119,7 @@ function Encounter()
 					--
 					local fade = Instance.new("Frame")
 					fade.ZIndex = 99
-					fade.Size = UDim2.new(1, 0, 1, 0)
+					fade.Size = UDim2.fromScale(1, 1)
 					fade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 					fade.BackgroundTransparency = 1
 					local tween = ts:Create(
@@ -136,17 +135,16 @@ function Encounter()
 					InBattle = check
 					BattleState(Mob)
 
-					local tween = ts:Create(
+					local fadeOutTween = ts:Create(
 						fade,
 						TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 						{ BackgroundTransparency = 1 }
 					)
 					fade.Parent = player.PlayerGui.BattleGui
-					tween:Play()
-					tween.Completed:Wait()
+					fadeOutTween:Play()
+					fadeOutTween.Completed:Wait()
 					fade.Parent = nil
 
-					--i know its bad idk how else to do it ok
 					if InBattle == true then
 						game.ReplicatedStorage.SharedRemotes.CombatHandle:FireServer("Start", ModelName)
 						ModelName = nil
@@ -193,8 +191,7 @@ game.ReplicatedStorage.SharedRemotes.CombatHandle.OnClientEvent:Connect(function
 		elseif Type == "GuiTurn" then
 			GuiMod:DisplayCurrentTurn(...) --takes as argument name of character
 		end
-	elseif string.match(Type, "Visual") then
-		--TODO: Module scripts to create visual effects
+	-- Visual effects are not built yet.
 	elseif Type == "End" then
 		InBattle = false
 		--
@@ -203,7 +200,7 @@ game.ReplicatedStorage.SharedRemotes.CombatHandle.OnClientEvent:Connect(function
 		--
 		local fade = Instance.new("Frame")
 		fade.ZIndex = 99
-		fade.Size = UDim2.new(1, 0, 1, 0)
+		fade.Size = UDim2.fromScale(1, 1)
 		fade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		fade.BackgroundTransparency = 1
 		local tween = ts:Create(
@@ -220,17 +217,17 @@ game.ReplicatedStorage.SharedRemotes.CombatHandle.OnClientEvent:Connect(function
 		BattleState()
 		OverworldSetup()
 
-		local tween = ts:Create(
+		local endFadeTween = ts:Create(
 			fade,
 			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{ BackgroundTransparency = 1 }
 		)
 		fade.Parent = player.PlayerGui.BattleGui
-		tween:Play()
-		tween.Completed:Wait()
+		endFadeTween:Play()
+		endFadeTween.Completed:Wait()
 		fade.Parent = nil
 
-		wait(5)
+		task.wait(5)
 
 		Encounter()
 	else

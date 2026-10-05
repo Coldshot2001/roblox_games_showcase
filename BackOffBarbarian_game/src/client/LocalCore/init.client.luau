@@ -25,7 +25,7 @@ Packets.SendMapPacket.OnClientEvent:Connect(function(GridArray, cellSize, origin
 	Visuals:CacheMap(GridArray, cellSize, originPosition, Name)
 end)
 
-Packets.MoveAckPacket.OnClientEvent:Connect(function(accepted, gridX, gridY, mapName)
+Packets.MoveAckPacket.OnClientEvent:Connect(function(_accepted, gridX, gridY, mapName)
 	Visuals:OnSpawnAck(gridX, gridY, mapName)
 end)
 

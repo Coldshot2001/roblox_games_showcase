@@ -76,13 +76,13 @@ end
 
 function Zone:SetUp()
 	repeat
-		wait(0.2)
+		task.wait(0.2)
 	until game.Workspace:FindFirstChild(game.Players.LocalPlayer.Name)
 
 	local HitboxFolder = game.Workspace:WaitForChild("Zones")
 	Zone:ResetLighting()
 
-	for _, Area in pairs(HitboxFolder:GetChildren()) do
+	for _, _ in pairs(HitboxFolder:GetChildren()) do
 		local Start = SetUpHitboxes("None")
 		if Start ~= true then
 			warn("Zone Hitbox Failure")
@@ -120,7 +120,7 @@ function Zone:FadeText(val, Va)
 			end
 		end
 
-		wait(1.25)
+		task.wait(1.25)
 
 		local data = areadata.Areas[Va]
 		ui.DisplayName.Text = data.DisplayName
@@ -143,33 +143,33 @@ function Zone:FadeText(val, Va)
 			ui.DisplayName.Visible = true
 		end
 
-		local tinfo = TweenInfo.new(1)
-		local twens = {}
-		local goal = {
+		local fadeInInfo = TweenInfo.new(1)
+		local fadeInTweens = {}
+		local fadeInGoal = {
 			["TextTransparency"] = 0,
 			["TextStrokeTransparency"] = 1,
 		}
-		table.insert(twens, Serv.tween:Create(ui.DisplayName, tinfo, goal))
-		table.insert(twens, Serv.tween:Create(ui.Desc, tinfo, goal))
+		table.insert(fadeInTweens, Serv.tween:Create(ui.DisplayName, fadeInInfo, fadeInGoal))
+		table.insert(fadeInTweens, Serv.tween:Create(ui.Desc, fadeInInfo, fadeInGoal))
 
-		for _, fade in next, twens do
+		for _, fade in next, fadeInTweens do
 			fade:Play()
 		end
 
-		wait(4)
+		task.wait(4)
 
 		if Zone.Data.CurrentArea == Va then
-			local tinfo = TweenInfo.new(1)
-			local twens = {}
-			local goal = {
+			local hideInfo = TweenInfo.new(1)
+			local hideTweens = {}
+			local hideGoal = {
 				["TextTransparency"] = 1,
 				["TextStrokeTransparency"] = 1,
 			}
 
-			table.insert(twens, Serv.tween:Create(ui.DisplayName, tinfo, goal))
-			table.insert(twens, Serv.tween:Create(ui.Desc, tinfo, goal))
+			table.insert(hideTweens, Serv.tween:Create(ui.DisplayName, hideInfo, hideGoal))
+			table.insert(hideTweens, Serv.tween:Create(ui.Desc, hideInfo, hideGoal))
 
-			for _, fade in next, twens do
+			for _, fade in next, hideTweens do
 				fade:Play()
 			end
 		end
@@ -209,24 +209,22 @@ function Zone:PlayMusic(area)
 				fade:Play()
 			end
 
-			local sounds = SoundServ:PlayLocalSound(NewMusic)
-
-			--print(string.format("Playing %q",NewMusic.Name))
+			SoundServ:PlayLocalSound(NewMusic)
 
 			if LastMusic ~= nil then
-				local twens = {}
-				local goal = {
+				local fadeOutTweens = {}
+				local fadeOutGoal = {
 					["Volume"] = 0,
 				}
-				table.insert(twens, Serv.tween:Create(LastMusic, tinfo, goal))
+				table.insert(fadeOutTweens, Serv.tween:Create(LastMusic, tinfo, fadeOutGoal))
 
-				for _, fade in next, twens do
+				for _, fade in next, fadeOutTweens do
 					fade:Play()
 				end
 
 				coroutine.wrap(function()
 					local msc = LastMusic
-					wait(2)
+					task.wait(2)
 					msc:Stop()
 					msc:Destroy()
 				end)()
@@ -239,7 +237,7 @@ end
 
 function Zone:UpdateLighting(area)
 	repeat
-		wait(0.2)
+		task.wait(0.2)
 	until game.Workspace:FindFirstChild(game.Players.LocalPlayer.Name)
 
 	if areadata.Areas[area] then
@@ -253,7 +251,7 @@ function Zone:UpdateLighting(area)
 
 		local tinfo = TweenInfo.new(3)
 		local twens = {}
-		for property, value in next, data.Lighting do
+		for property, _ in next, data.Lighting do
 			local goal = {
 				[property] = data.Lighting[property],
 			}
@@ -271,7 +269,7 @@ end
 function Zone:ResetLighting(area)
 	local tinfo = TweenInfo.new(3)
 	local twens = {}
-	for property, value in next, Zone.Originals do
+	for property, _ in next, Zone.Originals do
 		if game.Lighting[property] ~= Zone.Originals[property] then
 			local goal = {
 				[property] = Zone.Originals[property],

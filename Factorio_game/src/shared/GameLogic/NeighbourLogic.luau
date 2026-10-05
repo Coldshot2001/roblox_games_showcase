@@ -1,29 +1,51 @@
-local NeighbourLogic = {
-	["Generator"] = {
-		["Cooler"] = function(ItemData,NeighbourData,GenerateMana,GenerateFlux)
-			local NewFluxAmount = math.floor(ItemData["Flux"] / NeighbourData["Count"] * 100) / 100
+--!strict
 
-			for i,NeighbourData in ipairs(NeighbourData["Data"]) do
-				NeighbourData[i]["CurIntake"] += NewFluxAmount
-				NeighbourData[i]["CurCapacity"] += NewFluxAmount
-			end
-			
-			GenerateFlux = false
-			
-			return GenerateMana,GenerateFlux
-		end,
-	}
+export type ItemInstance = { [string]: any }
+export type NeighbourGroup = { count: number, items: { ItemInstance } }
+
+local NeighbourLogic = {}
+
+local ROUNDING_FACTOR = 100
+
+local function roundToCents(value: number): number
+	return math.floor(value * ROUNDING_FACTOR) / ROUNDING_FACTOR
+end
+
+NeighbourLogic.Rules = {}
+
+NeighbourLogic.Rules.Generator = {
+	Cooler = function(
+		itemDefinition: any,
+		group: NeighbourGroup,
+		generateMana: boolean,
+		_generateFlux: boolean
+	): (boolean, boolean)
+		local share = roundToCents(itemDefinition.Flux / group.count)
+		for _, cooler in ipairs(group.items) do
+			cooler.CurIntake += share
+			cooler.CurCapacity = math.min(cooler.CurCapacity + share, cooler.MaxCapacity)
+		end
+		return generateMana, false
+	end,
 }
 
-function NeighbourLogic.Check(ItemData,PlayerStats,NeighbourTypeCount)
-	local GenerateMana,GenerateFlux = true,true
-	
-	for Type,Table in NeighbourTypeCount do
-		if not NeighbourLogic[ ItemData["Type"] ] or not NeighbourLogic[ ItemData["Type"] ][Type] then continue end 
-		GenerateMana,GenerateFlux = NeighbourLogic[ ItemData["Type"] ][Type](ItemData,Table,GenerateMana,GenerateFlux)
+function NeighbourLogic.Check(itemDefinition: any, groups: { [string]: NeighbourGroup }): (boolean, boolean)
+	local generateMana = true
+	local generateFlux = true
+
+	local rules = NeighbourLogic.Rules[itemDefinition.Type]
+	if not rules then
+		return generateMana, generateFlux
 	end
-	
-	return GenerateMana,GenerateFlux
+
+	for neighbourType, group in pairs(groups) do
+		local rule = rules[neighbourType]
+		if rule then
+			generateMana, generateFlux = rule(itemDefinition, group, generateMana, generateFlux)
+		end
+	end
+
+	return generateMana, generateFlux
 end
 
 return NeighbourLogic

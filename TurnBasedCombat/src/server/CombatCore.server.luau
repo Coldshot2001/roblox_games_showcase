@@ -1,139 +1,177 @@
+--!strict
+
 local ServerRemotes = game.ServerScriptService.ServerRemotes
 local SharedRemotes = game.ReplicatedStorage.SharedRemotes
+
 local DataStorage = require(script.Parent.ServerCore.GameDataStorage)
+local TurnLogic = require(script.Parent.ServerCore.TurnLogic)
 
-local function BattleLoop(player, Chars, Randomness)
-	if not DataStorage.Battles[player.Name] then
-		return
+local TURN_TIMEOUT_SECONDS = 30
+local ENEMY_PAUSE_SECONDS = 1.1
+local RESULT_PAUSE_SECONDS = 1
+
+local turnSignals: { [number]: BindableEvent } = {}
+
+SharedRemotes.CombatHandle.OnServerEvent:Connect(function(player, ...)
+	local signal = turnSignals[player.UserId]
+	if signal then
+		signal:Fire({ ... })
 	end
-	for Index, Character in pairs(Chars) do
-		game.ReplicatedStorage.SharedRemotes.CombatHandle:FireClient(
-			player,
-			"GuiTurn",
-			string.format("%i%s", Index, Character[1].Name)
-		)
-		if Character[2] == "Ally" then
-			SharedRemotes.CombatHandle:FireClient(player, "GuiSkills", Character[1].Skills, true)
-			local player, skill, targetName, Index = SharedRemotes.CombatHandle.OnServerEvent:Wait()
-			if skill == "Forefit" then
-				ServerRemotes.BattlesEvent:Fire(player, "BattleLost")
-				SharedRemotes.CombatHandle:FireClient(player, "End")
-				return
-			end
-			local target
-			local skill = Character[1].Skills[skill]
-			for i, b in pairs(Chars) do
-				if b[1]["Name"] == targetName and i == Index then
-					target = b[1]
-					break
-				end
-			end
-			--TODO: (Somehow) check for the target's passives and act according to them
-			if target then
-				skill["Function"](Character[1], target, Chars)
-				skill["CurCD"] = skill["BaseCD"] + 1
-			end
-		else
-			SharedRemotes.CombatHandle:FireClient(player, "GuiSkills", nil, false)
-			wait(1.1)
-			--choosing moves and targets will be done more strategically in the future but for now its just random
-			local skill
-			repeat
-				skill = Character[1].Skills[Randomness:NextInteger(1, #Character[1].Skills)]
-			until skill.Type ~= "Passive" and skill["CurCD"] == 0
+end)
 
-			local target
-			if skill.Type == "Attack" then
-				for _, Char in pairs(Chars) do
-					if Char[2] == "Ally" then
-						target = Char[1]
-						break
-					end
-				end
-			elseif skill.Type == "Support" then
-				for _, Char in pairs(Chars) do
-					if Char[2] == "Enemy" then
-						target = Char[1]
-						break
-					end
-				end
-			end
+local function requestTurn(player: Player): { any }?
+	local signal = Instance.new("BindableEvent")
+	turnSignals[player.UserId] = signal
 
-			skill["Function"](Character[1], target, Chars)
-			skill["CurCD"] = skill["BaseCD"] + 1
+	local timeoutThread = task.delay(TURN_TIMEOUT_SECONDS, function()
+		if turnSignals[player.UserId] == signal then
+			signal:Fire(nil)
 		end
+	end)
 
-		for _, Skill in pairs(Character[1].Skills) do
-			if Skill["CurCD"] > 0 and Skill["Type"] ~= "Passive" then
-				Skill["CurCD"] -= 1
-			end
-		end
+	local answer = signal.Event:Wait()
+	task.cancel(timeoutThread)
 
-		local AllyTeamHP, EnemyTeamHP = 0, 0
-		for Index, Character in pairs(Chars) do
-			game.ReplicatedStorage.SharedRemotes.VisualHandle:FireClient(
-				player,
-				"CharUi",
-				nil,
-				"Update",
-				{ Character[2], Index, Character[1] }
-			)
-			if Character[1]["Current Health"] <= 0 then
-				local checked = {}
-				local model
-				if Character[2] == "Enemy" then
-					for i = 1, #DataStorage.GameData[player.Name]["InBattle"][2]["Enemies"], 1 do
-						if not table.find(checked, i) then
-							model = workspace.Battles[player.Name]["Enemy" .. i]:FindFirstChild(Character[1].Name)
-							table.insert(checked, i)
-							if model then
-								DataStorage.GameData[player.Name]["InBattle"][2]["Enemies"][i] = nil
-								break
-							end
-						end
-					end
-				else
-					for i = 1, #DataStorage.GameData[player.Name]["InBattle"][2]["Allies"], 1 do
-						if not table.find(checked, i) then
-							model = workspace.Battles[player.Name]["Ally" .. i]:FindFirstChild(Character[1].Name)
-							table.insert(checked, i)
-							if model then
-								DataStorage.GameData[player.Name]["InBattle"][2]["Allies"][i] = nil
-								break
-							end
-						end
-					end
-				end
-				if model then
-					model.Parent = nil --TODO: change to death animation
-				end
-				Chars[Index] = nil
-			end
-
-			if Character[2] == "Ally" then
-				AllyTeamHP += Character[1]["Current Health"]
-			else
-				EnemyTeamHP += Character[1]["Current Health"]
-			end
-		end
-		if AllyTeamHP <= 0 then
-			wait(1)
-			ServerRemotes.BattlesEvent:Fire(player, "BattleLost")
-			SharedRemotes.CombatHandle:FireClient(player, "End")
-			return
-		elseif EnemyTeamHP <= 0 then
-			wait(1)
-			ServerRemotes.BattlesEvent:Fire(player, "BattleWon")
-			SharedRemotes.CombatHandle:FireClient(player, "End")
-			return
-		end
+	if turnSignals[player.UserId] == signal then
+		turnSignals[player.UserId] = nil
 	end
-	BattleLoop(player, Chars, Randomness)
+	signal:Destroy()
+
+	if typeof(answer) ~= "table" then
+		return nil
+	end
+	return answer
 end
 
-ServerRemotes.BattlesEvent.Event:Connect(function(player, Type, EnemyName)
-	if Type == "BattleStarted" then
-		local RandomSeed = Random.new(math.random(0, #EnemyName))
-		BattleLoop(player, DataStorage.Battles[player.Name], RandomSeed)
+local function takePlayerTurn(player: Player, entries: any, character: any): boolean
+	SharedRemotes.CombatHandle:FireClient(player, "GuiSkills", character.Skills, true)
+
+	local answer = requestTurn(player)
+	if answer == nil then
+		return false
 	end
+	if answer[1] == "Forefit" then
+		return false
+	end
+
+	local skill = TurnLogic.getUsableSkill(character, answer[1])
+	local targetEntry = TurnLogic.getTarget(entries, answer[2], answer[3])
+	if not skill or not targetEntry then
+		return true
+	end
+	if not TurnLogic.sideMatchesType(skill.Type, targetEntry[2]) then
+		return true
+	end
+
+	skill.Function(character, targetEntry[1], entries)
+	skill.CurCD = (skill.BaseCD or 0) + 1
+	return true
+end
+
+local function takeEnemyTurn(player: Player, entries: any, character: any, random: Random)
+	SharedRemotes.CombatHandle:FireClient(player, "GuiSkills", nil, false)
+	task.wait(ENEMY_PAUSE_SECONDS)
+
+	local skills = TurnLogic.getUsableSkills(character)
+	if #skills == 0 then
+		return
+	end
+
+	local skill = skills[random:NextInteger(1, #skills)]
+	local targetSide = skill.Type == "Attack" and "Ally" or "Enemy"
+	local targetEntry = TurnLogic.getFirstEntry(entries, targetSide)
+	if not targetEntry then
+		return
+	end
+
+	skill.Function(character, targetEntry[1], entries)
+	skill.CurCD = (skill.BaseCD or 0) + 1
+end
+
+local function tickCooldowns(character: any)
+	for _, skill in pairs(character.Skills or {}) do
+		if (skill.CurCD or 0) > 0 and skill.Type ~= "Passive" then
+			skill.CurCD -= 1
+		end
+	end
+end
+
+local function broadcastHealth(player: Player, entries: any)
+	for index, entry in pairs(entries) do
+		SharedRemotes.VisualHandle:FireClient(player, "CharUi", nil, "Update", {
+			entry[2],
+			index,
+			entry[1],
+		})
+	end
+end
+
+local function removeDead(player: Player, entries: any)
+	local folder = workspace.Battles:FindFirstChild(player.Name)
+	for index, entry in pairs(entries) do
+		local character = entry[1]
+		if (character["Current Health"] or 0) <= 0 then
+			if folder then
+				local model = folder:FindFirstChild(character.Name, true)
+				if model then
+					model:Destroy()
+				end
+			end
+			entries[index] = nil
+		end
+	end
+end
+
+local function battleLoop(player: Player, entries: any)
+	local random = Random.new()
+
+	while DataStorage.Battles[player.UserId] ~= nil do
+		for index, entry in pairs(entries) do
+			if DataStorage.Battles[player.UserId] == nil then
+				return
+			end
+
+			local character = entry[1]
+			SharedRemotes.CombatHandle:FireClient(player, "GuiTurn", string.format("%d%s", index, character.Name))
+
+			if entry[2] == "Ally" then
+				if not takePlayerTurn(player, entries, character) then
+					ServerRemotes.BattlesEvent:Fire(player, "BattleLost")
+					return
+				end
+			else
+				takeEnemyTurn(player, entries, character, random)
+			end
+
+			broadcastHealth(player, entries)
+			removeDead(player, entries)
+
+			if TurnLogic.teamHealth(entries, "Ally") <= 0 then
+				task.wait(RESULT_PAUSE_SECONDS)
+				ServerRemotes.BattlesEvent:Fire(player, "BattleLost")
+				return
+			elseif TurnLogic.teamHealth(entries, "Enemy") <= 0 then
+				task.wait(RESULT_PAUSE_SECONDS)
+				ServerRemotes.BattlesEvent:Fire(player, "BattleWon")
+				return
+			end
+		end
+
+		for _, entry in pairs(entries) do
+			tickCooldowns(entry[1])
+		end
+	end
+end
+
+ServerRemotes.BattlesEvent.Event:Connect(function(player: Player, eventType: string)
+	if eventType ~= "BattleStarted" then
+		return
+	end
+	local entries = DataStorage.Battles[player.UserId]
+	if not entries then
+		return
+	end
+	task.spawn(function()
+		battleLoop(player, entries)
+	end)
 end)

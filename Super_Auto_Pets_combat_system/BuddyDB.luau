@@ -40,12 +40,27 @@ local BuddyDB = {
 				elseif team == false then
 					CurTeam = Battle.EnemyTeam
 				end
-				if CurTeam[SelfIndex].UUID ~= Data[1] then return end
-				if #CurTeam <= 1 then return end
-				local RandomBuddy = 0
-				repeat
-					RandomBuddy = math.random(1, #CurTeam)
-				until RandomBuddy ~= SelfIndex
+
+				local SelfUnit = CurTeam and CurTeam[SelfIndex]
+				if not SelfUnit or SelfUnit.UUID ~= Data[1] then
+					return
+				end
+
+				-- Count the living units by hand, the team array has holes.
+				local living = {}
+				for index = 1, 5 do
+					if CurTeam[index] ~= nil then
+						table.insert(living, index)
+					end
+				end
+				if #living <= 1 then
+					return
+				end
+
+				local RandomBuddy = SelfIndex
+				while RandomBuddy == SelfIndex do
+					RandomBuddy = living[math.random(1, #living)]
+				end
 				CurTeam[RandomBuddy].Stats.Health += 1
 				CurTeam[RandomBuddy].Stats.Damage += 1
 			end,
@@ -57,7 +72,7 @@ local BuddyDB = {
 
 local ProxyBuddyDB = {}
 setmetatable(ProxyBuddyDB, {
-	__index = function(self, key)
+	__index = function(_, key)
 		local originalValue = BuddyDB[key]
 		if originalValue ~= nil then
 			return deepcopy(originalValue)
@@ -65,7 +80,7 @@ setmetatable(ProxyBuddyDB, {
 		return nil
 	end,
 
-	__newindex = function(self, key, value)
+	__newindex = function(_, _, _)
 		error("Cannot modify unit database!")
 	end
 })

@@ -28,7 +28,10 @@ local GearDB = {
 				elseif team == false then
 					CurTeam = Battle.EnemyTeam
 				end
-				if CurTeam[SelfIndex].UUID ~= Data[1] then return end
+				local SelfUnit = CurTeam[SelfIndex]
+				if not SelfUnit or SelfUnit.UUID ~= Data[1] then
+					return
+				end
 				Data[2][1] += 3
 			end,
 		},
@@ -55,10 +58,16 @@ local GearDB = {
 				elseif team == false then
 					EnmyTeam = Battle.EnemyTeam
 				end
-				if EnmyTeam[1].UUID ~= Data[1] then return end
+				local FirstEnemy = EnmyTeam[1]
+				if not FirstEnemy or FirstEnemy.UUID ~= Data[1] then
+					return
+				end
 				if SelfIndex ~= 1 then return end
 				Data[2][1] -= 20
-				PlayerTeam[SelfIndex].Gear = nil
+				local SelfUnit = PlayerTeam[SelfIndex]
+				if SelfUnit then
+					SelfUnit.Gear = nil
+				end
 			end
 		},
 		["Description"] = "Take 20 less damage, once.",
@@ -68,7 +77,7 @@ local GearDB = {
 
 local ProxyGearDB = {}
 setmetatable(ProxyGearDB, {
-	__index = function(self, key)
+	__index = function(_, key)
 		local originalValue = GearDB[key]
 		if originalValue ~= nil then
 			return deepcopy(originalValue)
@@ -76,7 +85,7 @@ setmetatable(ProxyGearDB, {
 		return nil
 	end,
 
-	__newindex = function(self, key, value)
+	__newindex = function(_, _, _)
 		error("Cannot modify gear database!")
 	end
 })

@@ -1,241 +1,304 @@
+--!strict
+
 local RunService = game:GetService("RunService")
-local ItemsDatabase = require(game:GetService("ReplicatedStorage"):WaitForChild("ItemsDatabase", 10))
-local NeighbourLogic = require(script.NeighbourLogic)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local ItemsDatabase = require(ReplicatedStorage:WaitForChild("ItemsDatabase"))
+local NeighbourLogic = require(script:WaitForChild("NeighbourLogic"))
+
+export type ItemInstance = { [string]: any }
+export type PlayerData = {
+	Stats: { [string]: number },
+	GameGrid: any,
+	BoughtUpgrades: any,
+	SavedLayouts: any,
+	CurrentLayout: any,
+}
+
+local FLUX_DECAY_PER_TICK = 0.1
 
 local GameLogic = {}
 
-local createItem = {
-	["Generator"] = function(ItemID)
-		local ItemObject = {
-			["MaxDurability"] = ItemsDatabase[ItemID]["Durability"],
-			["CurDurability"] = ItemsDatabase[ItemID]["Durability"],
-			["ItemID"] = ItemID
-		}
-		return ItemObject
-	end,
-	["Cooler"] = function(ItemID)
-		local ItemObject = {
-			["MaxCapacity"] = ItemsDatabase[ItemID]["Capacity"],
-			["CurCapacity"] = 0,
-			["CurIntake"] = 0,
-			["ItemID"] = ItemID
-		}
-		return ItemObject
-	end,
-	["Amplifier"] = function()
-		return {}
-	end,
-	["ManaUpgrade"] = function()
-		return {}
-	end,
-	["FluxStorage"] = function()
-		return {}
-	end,
-	["FluxUpgrade"] = function()
-		return {}
-	end,
-	["FluxInlet"] = function()
-		return {}
-	end,
-	["FluxOutlet"] = function()
-		return {}
-	end,
-	["Exchanger"] = function()
-		return {}
-	end,
-}
+local createItem: { [string]: (itemID: string) -> ItemInstance } = {}
 
-local ItemsLogic = {
-	["Generator"] = function(x, y, selfData, PlayerData, GridObject)
-		local ServerMode = RunService:IsServer()
-		local NeighbourTypeCount = {}
-		local GenerateMana = true
-		local GenerateFlux = true
-		
-		if selfData["CurDurability"] <= 0 then
-			GameLogic:DestroyItem(x, y, GridObject)
-			if ServerMode == false then
-				selfData["Model"]:Destroy()
-			end
-			return
-		else
-			selfData["CurDurability"] -= 1
+createItem.Generator = function(itemID: string): ItemInstance
+	local definition = ItemsDatabase[itemID]
+	return {
+		ItemID = itemID,
+		MaxDurability = definition.Durability,
+		CurDurability = definition.Durability,
+	}
+end
+
+createItem.Cooler = function(itemID: string): ItemInstance
+	local definition = ItemsDatabase[itemID]
+	return {
+		ItemID = itemID,
+		MaxCapacity = definition.Capacity,
+		CurCapacity = 0,
+		CurIntake = 0,
+	}
+end
+
+createItem.Amplifier = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.ManaUpgrade = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.FluxStorage = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.FluxUpgrade = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.FluxInlet = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.FluxOutlet = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+createItem.Exchanger = function(itemID: string): ItemInstance
+	return { ItemID = itemID }
+end
+
+local function getItemModelTemplate(modelName: string): Model?
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local models = assets and assets:FindFirstChild("Models")
+	local template = models and models:FindFirstChild(modelName)
+	if template and template:IsA("Model") then
+		return template
+	end
+	return nil
+end
+
+local function copyMatchingFields(target: ItemInstance, source: { [string]: any })
+	for key, defaultValue in pairs(target) do
+		local sourceValue = source[key]
+		if sourceValue ~= nil and typeof(sourceValue) == typeof(defaultValue) then
+			target[key] = sourceValue
 		end
-		
-		--apply player upgrades here
-		local ItemData = ItemsDatabase[ selfData["ItemID"] ]
-		
-		local PlayerStats = PlayerData["Stats"]
-		
-		--check neighbours
-		local Neighbours = GridObject:GetNeighbours(x, y)
-		
-		if #Neighbours ~= 0 then
-			for i,Neighbour in ipairs(Neighbours) do
-				local x,y = Neighbour[2],Neighbour[1]
-				local NeighbourData = GridObject:GetValue(x,y)
-				local NeighbourType = ItemsDatabase[ NeighbourData[1]["ItemID"] ]["Type"]
-				
-				if not NeighbourTypeCount[NeighbourType] then
-					NeighbourTypeCount[NeighbourType] = { Count = 1, Data = { [1] = { NeighbourData[1] } } }
-				else
-					NeighbourTypeCount[NeighbourType]["Count"] += 1
-					table.insert(NeighbourTypeCount[NeighbourType]["Data"],{ NeighbourData[1] })
+	end
+end
+
+local function buildItem(itemID: string, savedData: any): ItemInstance?
+	local definition = ItemsDatabase[itemID]
+	if typeof(definition) ~= "table" then
+		return nil
+	end
+
+	local constructor = createItem[definition.Type]
+	if not constructor then
+		return nil
+	end
+
+	local item = constructor(itemID)
+
+	if savedData ~= nil then
+		if typeof(savedData) ~= "table" then
+			return nil
+		end
+		copyMatchingFields(item, savedData)
+	end
+
+	if typeof(item.MaxDurability) == "number" and item.MaxDurability > 0 then
+		item.CurDurability = math.clamp(item.CurDurability, 0, item.MaxDurability)
+	end
+	if typeof(item.MaxCapacity) == "number" and item.MaxCapacity > 0 then
+		item.CurCapacity = math.clamp(item.CurCapacity, 0, item.MaxCapacity)
+		item.CurIntake = math.max(0, item.CurIntake)
+	end
+
+	return item
+end
+
+local function attachClientModel(x: number, y: number, grid: any, item: ItemInstance)
+	if RunService:IsServer() then
+		return
+	end
+
+	local definition = ItemsDatabase[item.ItemID]
+	local template = getItemModelTemplate(definition.Model)
+	if not template then
+		return
+	end
+
+	local clone = template:Clone()
+	clone:PivotTo(CFrame.new(grid:GetWorldPosition(x, y)) * CFrame.new(0, 3, 0))
+	clone:SetAttribute("x", x)
+	clone:SetAttribute("y", y)
+	clone.Parent = workspace
+	item.Model = clone
+end
+
+local ItemsLogic: { [string]: (number, number, ItemInstance, PlayerData, any) -> () } = {}
+
+ItemsLogic.Generator = function(x, y, item, playerData, grid)
+	if item.CurDurability <= 0 then
+		GameLogic:DestroyItem(x, y, grid)
+		return
+	end
+	item.CurDurability -= 1
+
+	local definition = ItemsDatabase[item.ItemID]
+	local stats = playerData.Stats
+	local neighbours = grid:GetNeighbours(x, y)
+
+	local generateMana, generateFlux = true, true
+	if #neighbours > 0 then
+		local groups: { [string]: NeighbourLogic.NeighbourGroup } = {}
+		for _, position in ipairs(neighbours) do
+			local neighbourCell = grid:GetValue(position[1], position[2])
+			local neighbourItem = neighbourCell and neighbourCell[1]
+			if neighbourItem then
+				local neighbourDefinition = ItemsDatabase[neighbourItem.ItemID]
+				if neighbourDefinition then
+					local group = groups[neighbourDefinition.Type]
+					if group then
+						group.count += 1
+						table.insert(group.items, neighbourItem)
+					else
+						groups[neighbourDefinition.Type] = { count = 1, items = { neighbourItem } }
+					end
 				end
 			end
-			
-			GenerateMana,GenerateFlux = NeighbourLogic.Check(ItemData,PlayerStats,NeighbourTypeCount)
 		end
-		
-		if GenerateMana then PlayerStats["CurMana"] = PlayerStats["CurMana"] < PlayerStats["MaxMana"] and PlayerStats["CurMana"] + ItemData["Mana"] or PlayerStats["MaxMana"] end
-		if GenerateFlux then PlayerStats["CurFlux"] = PlayerStats["CurFlux"] < PlayerStats["MaxFlux"] and PlayerStats["CurFlux"] + ItemData["Flux"] or PlayerStats["MaxFlux"] end
-	end,
-	["Cooler"] = function(x, y, selfData, PlayerData, GridObject)
-		local ServerMode = RunService:IsServer()
-		if selfData["CurCapacity"] >= selfData["MaxCapacity"] then
-			
-			GameLogic:DestroyItem(x, y, GridObject)
-			if ServerMode == false then
-				selfData["Model"]:Destroy()
+		generateMana, generateFlux = NeighbourLogic.Check(definition, groups)
+	end
+
+	if generateMana then
+		stats.CurMana = math.min(stats.CurMana + (definition.Mana or 0), stats.MaxMana)
+	end
+	if generateFlux then
+		stats.CurFlux = math.min(stats.CurFlux + (definition.Flux or 0), stats.MaxFlux)
+	end
+end
+
+ItemsLogic.Cooler = function(x, y, item, _playerData, grid)
+	if item.CurCapacity >= item.MaxCapacity then
+		GameLogic:DestroyItem(x, y, grid)
+		return
+	end
+
+	if item.CurCapacity > 0 then
+		local definition = ItemsDatabase[item.ItemID]
+		item.CurCapacity = math.max(0, item.CurCapacity - definition.Transfer)
+		item.CurIntake = 0
+	end
+end
+
+ItemsLogic.Amplifier = function() end
+ItemsLogic.ManaUpgrade = function() end
+ItemsLogic.FluxStorage = function() end
+ItemsLogic.FluxUpgrade = function() end
+ItemsLogic.FluxInlet = function() end
+ItemsLogic.FluxOutlet = function() end
+ItemsLogic.Exchanger = function() end
+
+function GameLogic:Tick(playerData: PlayerData)
+	local stats = playerData.Stats
+	local grid = playerData.GameGrid
+
+	for y = 1, stats.LayoutHeight do
+		for x = 1, stats.LayoutWidth do
+			local cell = grid:GetValue(x, y)
+			local item = cell and cell[1]
+			if item then
+				local definition = ItemsDatabase[item.ItemID]
+				assert(definition, string.format("Unknown item id %q on the grid", tostring(item.ItemID)))
+				local logic = ItemsLogic[definition.Type]
+				assert(logic, string.format("No tick logic for item type %q", tostring(definition.Type)))
+				logic(x, y, item, playerData, grid)
 			end
-			return
-		elseif selfData["CurCapacity"] > 0 then
-			local ItemData = ItemsDatabase[ selfData["ItemID"] ]
-			selfData["CurCapacity"] = selfData["CurCapacity"] - ItemData["Transfer"] < 0 and 0 or selfData["CurCapacity"] - ItemData["Transfer"]
-			selfData["CurIntake"] = 0
-		end
-	end,
-	["Amplifier"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["ManaUpgrade"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["FluxStorage"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["FluxUpgrade"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["FluxInlet"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["FluxOutlet"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-	["Exchanger"] = function()
-		print("i dont wanna code this yet :(")
-	end,
-}
-
-function GameLogic:Tick(PlayerData)
-	local PlayerStats = PlayerData["Stats"]
-	local Width = PlayerStats["LayoutWidth"]
-	local Height = PlayerStats["LayoutHeight"]
-	local Grid = PlayerData["GameGrid"]
-
-	for y = 1, Height do
-		for x = 1, Width do
-			local itemObj = Grid:GetValue(x, y)
-			if itemObj[1] == nil then continue end --no item to process here!
-			local itemData = ItemsDatabase[ itemObj[1]["ItemID"] ]
-			local ItemType = itemData["Type"]
-			assert(ItemsLogic[ItemType], string.format("The item type %s doesn't exist!", ItemType))
-			ItemsLogic[ItemType](x, y, itemObj[1], PlayerData, Grid)
 		end
 	end
 
-	--idk how stats affect this yet
-	PlayerStats["CurFlux"] = PlayerStats["CurFlux"] <= 0 and 0 or PlayerStats["CurFlux"] - 0.1
-	PlayerStats["CurFlux"] = PlayerStats["CurFlux"] > PlayerStats["MaxFlux"] and PlayerStats["MaxFlux"] or PlayerStats["CurFlux"]
-	PlayerStats["CurMana"] = PlayerStats["CurMana"] > PlayerStats["MaxMana"] and PlayerStats["MaxMana"] or PlayerStats["CurMana"]
+	stats.CurFlux = math.max(0, stats.CurFlux - FLUX_DECAY_PER_TICK)
+	stats.CurFlux = math.min(stats.CurFlux, stats.MaxFlux)
+	stats.CurMana = math.min(stats.CurMana, stats.MaxMana)
 end
 
-local ItemsModels = game:GetService("ReplicatedStorage"):WaitForChild("Assets"):WaitForChild("Models")
-
-function GameLogic:AddItem(x, y, ItemID, GridObject, ExistingData)
-	ExistingData = ExistingData or nil
-	
-	local ServerMode = RunService:IsServer()
-	
-	local PositionData = GridObject:GetValue(x, y)
-	if PositionData[1] == nil then
-		local ItemData = ItemsDatabase[ItemID]
-		local ItemType = ItemData["Type"]
-		assert(createItem[ItemType], string.format("The item type %s doesn't exist!", ItemType))
-		local ItemObj
-		if ExistingData then --TODO: stop assuming its good and check the data being given!
-			ItemObj = ExistingData
-		else
-			ItemObj = createItem[ItemType](ItemID)
-		end
-		
-		if next(ItemObj) == nil then return end 
-		
-		if ServerMode == false then
-			local ItemClone = ItemsModels:FindFirstChild(ItemData["Model"]):Clone() 
-			ItemClone:PivotTo(CFrame.new(GridObject:GetWorldPosition(x, y)) * CFrame.new(0, 3, 0))
-			ItemClone:SetAttribute("x",x)
-			ItemClone:SetAttribute("y",y)
-			ItemClone.Parent = workspace
-			ItemObj["Model"] = ItemClone
-		end
-		GridObject:SetValue(x, y, ItemObj)
-	else
-		warn(string.format("Position %i %i contains an object already, type of object: %s (DEBUG INFORMATION)", x, y, typeof(PositionData[1])))
+function GameLogic:AddItem(x: number, y: number, itemID: string, grid: any, savedData: any?): boolean
+	local cell = grid:GetValue(x, y)
+	if cell ~= nil and cell[1] ~= nil then
+		return false
 	end
+
+	local item = buildItem(itemID, savedData)
+	if not item then
+		return false
+	end
+
+	attachClientModel(x, y, grid, item)
+	return grid:SetValue(x, y, { item })
 end
 
-function GameLogic:ClearAllItems(GridObject)
-	local ServerMode = RunService:IsServer()
-		
-	for y=1, GridObject.height do
-		for x=1,GridObject.width do
-			local PositionData = GridObject:GetValue(x, y)
-			if typeof(PositionData) == "table" and PositionData[1] ~= nil then
-				if ServerMode == false then
-					PositionData[1]["Model"]:Destroy()
+function GameLogic:UpdateItem(x: number, y: number, grid: any, updatedData: any)
+	if updatedData == nil or typeof(updatedData) ~= "table" or typeof(updatedData.ItemID) ~= "string" then
+		GameLogic:DestroyItem(x, y, grid)
+		return
+	end
+
+	local cell = grid:GetValue(x, y)
+	local oldItem = cell and cell[1]
+
+	local item = buildItem(updatedData.ItemID, updatedData)
+	if not item then
+		return
+	end
+
+	if oldItem and oldItem.Model then
+		item.Model = oldItem.Model
+	end
+	if item.Model == nil then
+		attachClientModel(x, y, grid, item)
+	end
+
+	grid:SetValue(x, y, { item })
+end
+
+function GameLogic:DestroyItem(x: number, y: number, grid: any): boolean
+	local cell = grid:GetValue(x, y)
+	local item = cell and cell[1]
+	if not item then
+		return false
+	end
+
+	if not RunService:IsServer() and item.Model then
+		item.Model:Destroy()
+	end
+
+	grid:SetValue(x, y, nil)
+	return true
+end
+
+function GameLogic:ClearAllItems(grid: any)
+	for y = 1, grid.height do
+		for x = 1, grid.width do
+			local cell = grid:GetValue(x, y)
+			local item = cell and cell[1]
+			if item then
+				if not RunService:IsServer() and item.Model then
+					item.Model:Destroy()
 				end
-				GridObject:SetValue(x, y, nil, 1)
+				grid:SetValue(x, y, nil)
 			end
 		end
 	end
 end
 
-function GameLogic:DestroyItem(x, y, GridObject)
-	local ServerMode = RunService:IsServer()
-	
-	local PositionData = GridObject:GetValue(x, y)
-	if typeof(PositionData) == "table" and PositionData[1] ~= nil then
-		if ServerMode == false then
-			PositionData[1]["Model"]:Destroy()
-		end
-		GridObject:SetValue(x, y, nil, 1)
-	else
-		warn(string.format("Position %i %i does NOT contain an object! (DEBUG INFORMATION)", x, y))
-	end
-end
-
-function GameLogic:UpdateItem(x, y, GridObject, UpdatedData)
-	--TODO: STOP ASSUMING ITS ALL CORRECT
-	local ServerMode = RunService:IsServer()
-	
-	local PositionData = GridObject:GetValue(x, y)
-	if typeof(PositionData) == "table" and PositionData[1] ~= nil then
-		if UpdatedData == nil then
-			if ServerMode == false then
-				PositionData[1]["Model"]:Destroy()
-			end
-			GridObject:SetValue(x, y, nil, 1)
-		else
-			if ServerMode == false then
-				UpdatedData["Model"] = PositionData[1]["Model"]
-			end
-			GridObject:SetValue(x, y, UpdatedData, 1)
-		end
-	elseif PositionData[1] == nil and UpdatedData ~= nil then
-		GameLogic:AddItem(x, y, UpdatedData["ItemID"], GridObject, UpdatedData)
-	end
+for _, definition in pairs(ItemsDatabase) do
+	assert(
+		createItem[definition.Type],
+		string.format("Item type %q has no constructor", tostring(definition.Type))
+	)
+	assert(ItemsLogic[definition.Type], string.format("Item type %q has no tick logic", tostring(definition.Type)))
 end
 
 return GameLogic

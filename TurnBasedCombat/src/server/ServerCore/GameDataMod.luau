@@ -1,22 +1,21 @@
-local Characters = require(game.ServerStorage.CharactersDatabase).Characters --TODO: Remove this once we add the ability to get characters
+--!strict
+
+local Characters = require(game.ServerStorage.CharactersDatabase).Characters
+local CharacterClass = require(game.ServerStorage.CharacterClass)
 local DataStorage = require(script.Parent.GameDataStorage)
+
 local Data = {}
 Data.__index = Data
 
-local function shallowCopy(original)
-	local copy = {}
-	for key, value in pairs(original) do
-		copy[key] = value
-	end
-	return copy
-end --TODO: Remove this once we add the ability to get characters
-
-function Data:Create(Player)
-	local PlayerData = {
-		Team = {}, -- the units in the player's team
-		InBattle = { false, nil }, --in battle?, pointer to the battle in GameDataStorage
+function Data:Create(_player: Player): any
+	return {
+		Team = {},
+		InBattle = { false, nil },
 		Inventory = {
-			Units = { shallowCopy(Characters["Claw Dude"]), shallowCopy(Characters["Blue Gun Dude"]) },
+			Units = {
+				CharacterClass.clone(Characters["Claw Dude"]),
+				CharacterClass.clone(Characters["Blue Gun Dude"]),
+			},
 			Equipment = {},
 		},
 		Quests = { CurrentQuests = {}, FinishedQuests = {} },
@@ -24,30 +23,29 @@ function Data:Create(Player)
 			Gold = 0,
 			Crystal = 50,
 		},
-		Zones = { "None", {} }, --Current zone you're in, zones you've visited before(will probably be used for fast travel or smtn)
-		Costume = "None", --The current unit you look like (you can only costume as certain units, there is a default unit if you have none equipped)
+		Zones = { "None", {} },
+		Costume = "None",
 	}
-
-	return PlayerData
 end
 
-function Data:BattleCreate(Player, enemyTeam)
-	if enemyTeam then
-		local allyteam, enemyteam = {}, {}
-		for _, char in pairs(DataStorage.GameData[Player.Name]["Team"]) do
-			table.insert(allyteam, char.Name)
-		end
-		for _, char in pairs(enemyTeam) do
-			table.insert(enemyteam, char.Name)
-		end
-		local battletable = {
-			["Allies"] = allyteam,
-			["Enemies"] = enemyteam,
-		}
-		return battletable
-	else
-		warn(string.format("No enemies provided to create battle for player %q", Player.Name))
+function Data:BattleCreate(player: Player, enemyTeam: any): any?
+	local playerData = DataStorage.GameData[player.UserId]
+	if not playerData then
+		warn(string.format("GameDataMod: no data for player %d", player.UserId))
+		return nil
 	end
+
+	local allies = {}
+	for _, character in ipairs(playerData.Team) do
+		table.insert(allies, character.Name)
+	end
+
+	local enemies = {}
+	for _, character in ipairs(enemyTeam) do
+		table.insert(enemies, character.Name)
+	end
+
+	return { Allies = allies, Enemies = enemies }
 end
 
 return Data

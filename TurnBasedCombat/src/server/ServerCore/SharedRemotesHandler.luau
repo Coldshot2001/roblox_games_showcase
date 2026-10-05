@@ -1,120 +1,180 @@
-local Shared = {} --This handles client to server requests, no server to client
+--!strict
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerRemotes = game.ServerScriptService.ServerRemotes
+
 local DataStorage = require(script.Parent.GameDataStorage)
 local LootModule = require(script.Parent.LootHandler)
+
+local MAX_TEAM_SIZE = 4
+local GACHA_PRICE = 10
+local GACHA_COOLDOWN_SECONDS = 1
+
+local Shared = {}
 
 Shared.Variables = {
 	["SetUp"] = false,
 	["RemoteStatus"] = false,
 }
 
+local lastGachaAt: { [number]: number } = {}
+
+local function fireTeamUi(player: Player)
+	local playerData = DataStorage.GameData[player.UserId]
+	if not playerData then
+		return
+	end
+	ReplicatedStorage.SharedRemotes.VisualHandle:FireClient(player, "TeamUi", playerData.Team)
+end
+
 Shared.Events = {
+	["AreaHandle"] = function(args)
+		local player = args[1]
+		local zone = args[2]
+		if typeof(player) ~= "Instance" or not player:IsA("Player") or typeof(zone) ~= "string" then
+			return
+		end
 
-	["AreaHandle"] = function(ArgsTable)
-		--Arguments: player: Object, Zone: String
-		local player = ArgsTable[1]
-		if DataStorage.GameData[player.Name] then
-			if DataStorage.GameData[player.Name]["Zones"][1] ~= ArgsTable[2] then
-				DataStorage.GameData[player.Name]["Zones"][1] = ArgsTable[2]
-				if table.find(DataStorage.GameData[player.Name]["Zones"][2], ArgsTable[2]) == nil then
-					table.insert(DataStorage.GameData[player.Name]["Zones"][2], ArgsTable[2])
-				end
-				game.ReplicatedStorage.SharedRemotes.AreaHandle:FireClient(player)
+		local playerData = DataStorage.GameData[player.UserId]
+		if not playerData then
+			return
+		end
+		if playerData.Zones[1] == zone then
+			return
+		end
+
+		playerData.Zones[1] = zone
+		if table.find(playerData.Zones[2], zone) == nil then
+			table.insert(playerData.Zones[2], zone)
+		end
+		ReplicatedStorage.SharedRemotes.AreaHandle:FireClient(player)
+	end,
+
+	["CombatHandle"] = function(args)
+		local player = args[1]
+		local requestType = args[2]
+		if typeof(player) ~= "Instance" or not player:IsA("Player") then
+			return
+		end
+		if requestType ~= "Start" then
+			return
+		end
+		if DataStorage.Battles[player.UserId] == nil then
+			return
+		end
+		ServerRemotes.BattlesEvent:Fire(player, "BattleStarted")
+	end,
+
+	["GachaHandle"] = function(args)
+		local player = args[1]
+		if typeof(player) ~= "Instance" or not player:IsA("Player") then
+			return
+		end
+
+		local playerData = DataStorage.GameData[player.UserId]
+		if not playerData then
+			return
+		end
+
+		local now = os.clock()
+		if (lastGachaAt[player.UserId] or 0) + GACHA_COOLDOWN_SECONDS > now then
+			return
+		end
+		lastGachaAt[player.UserId] = now
+
+		if playerData.Currencies.Crystal < GACHA_PRICE then
+			return
+		end
+
+		local rarity = LootModule:GetRandomItemFromLootTable(LootModule.LootTables.Rarities)
+		if not rarity then
+			return
+		end
+		local character = LootModule:GetRandomItemFromLootTable(LootModule.LootTables[rarity])
+		if not character then
+			return
+		end
+
+		LootModule:AddCurrency(player, "Crystal", -GACHA_PRICE)
+		LootModule:AddUnit(player, character)
+	end,
+
+	["UnitHandle"] = function(args)
+		local player = args[1]
+		local action = args[2]
+		if typeof(player) ~= "Instance" or not player:IsA("Player") or typeof(action) ~= "string" then
+			return
+		end
+
+		local playerData = DataStorage.GameData[player.UserId]
+		if not playerData then
+			return
+		end
+
+		local unitIndex = args[4]
+		if typeof(unitIndex) ~= "number" or unitIndex ~= math.floor(unitIndex) then
+			return
+		end
+		local unit = playerData.Inventory.Units[unitIndex]
+		if not unit then
+			return
+		end
+
+		if action == "UnitEquip" then
+			local unitName = args[3]
+			if typeof(unitName) ~= "string" or unit.Name ~= unitName then
+				return
 			end
-		end
-	end,
-
-	["CombatHandle"] = function(ArgsTable)
-		--Arguments: player: Object, Type: String
-		local player = ArgsTable[1]
-		if ArgsTable[2] == "Start" then
-			game.ServerScriptService.ServerRemotes.BattlesEvent:Fire(player, "BattleStarted", ArgsTable[3])
-		end
-	end,
-
-	["GachaHandle"] = function(ArgsTable)
-		--Arguments: player: Object
-		local player = ArgsTable[1]
-		if DataStorage.GameData[player.Name]["Currencies"]["Crystal"] >= 10 then --TODO: change to price of summon based on the type we chose
-			LootModule:AddCurrency(player, "Crystal", -10)
-			local ChosenRarity = LootModule:GetRandomItemFromLootTable(LootModule.LootTables.Rarities)
-			local ChosenCharacter = LootModule:GetRandomItemFromLootTable(LootModule.LootTables[ChosenRarity])
-			LootModule:AddUnit(player, ChosenCharacter)
-		end
-	end,
-
-	["UnitHandle"] = function(ArgsTable)
-		--Arguments: player: Object,Type: String, UnitName: String , Index: Integer
-		local player = ArgsTable[1]
-		if string.match(ArgsTable[2], "Unit") then
-			local equippedunit = table.find(
-				DataStorage.GameData[player.Name]["Team"],
-				DataStorage.GameData[player.Name]["Inventory"]["Units"][ArgsTable[4]]
-			)
-			if ArgsTable[2] == "UnitEquip" then
-				if
-					#DataStorage.GameData[player.Name]["Team"] < 4
-					and DataStorage.GameData[player.Name]["Inventory"]["Units"][ArgsTable[4]].Name == ArgsTable[3]
-					and equippedunit == nil
-				then
-					table.insert(
-						DataStorage.GameData[player.Name]["Team"],
-						DataStorage.GameData[player.Name]["Inventory"]["Units"][ArgsTable[4]]
-					)
-					game.ReplicatedStorage.SharedRemotes.VisualHandle:FireClient(
-						player,
-						"TeamUi",
-						DataStorage.GameData[player.Name]["Team"]
-					)
-				end
-			elseif ArgsTable[2] == "UnitUnequip" then
-				if #DataStorage.GameData[player.Name]["Team"] > 1 and equippedunit then
-					table.remove(DataStorage.GameData[player.Name]["Team"], equippedunit)
-					game.ReplicatedStorage.SharedRemotes.VisualHandle:FireClient(
-						player,
-						"TeamUi",
-						DataStorage.GameData[player.Name]["Team"]
-					)
-				end
+			if #playerData.Team >= MAX_TEAM_SIZE then
+				return
 			end
-		elseif string.match(ArgsTable[2], "Equipment") then
-			--to do
+			if table.find(playerData.Team, unit) then
+				return
+			end
+			table.insert(playerData.Team, unit)
+			fireTeamUi(player)
+		elseif action == "UnitUnequip" then
+			local equippedIndex = table.find(playerData.Team, unit)
+			if not equippedIndex or #playerData.Team <= 1 then
+				return
+			end
+			table.remove(playerData.Team, equippedIndex)
+			fireTeamUi(player)
 		end
 	end,
 }
 
 function Shared:CreateEvents()
-	if Shared.Variables.SetUp == true and Shared.Variables.RemoteStatus == false then
-		for _, v in pairs(game.ReplicatedStorage.SharedRemotes:GetChildren()) do
-			v.OnServerEvent:Connect(function(...)
-				local args = { ... } --turns all the arguments into one table so to access them we got to loop through it (first argument will always be player)
-				local Success, Error = pcall(function()
-					Shared.Events[v.Name](args)
-				end)
+	if Shared.Variables.SetUp ~= true or Shared.Variables.RemoteStatus ~= false then
+		return
+	end
 
-				if not Success then
-					warn(string.format("%s : %s", v.Name, Error))
+	for _, remote in pairs(ReplicatedStorage.SharedRemotes:GetChildren()) do
+		remote.OnServerEvent:Connect(function(...)
+			local args = { ... }
+			local Success, Error = pcall(function()
+				local handler = Shared.Events[remote.Name]
+				if handler then
+					handler(args)
 				end
 			end)
-		end
-
-		Shared.Variables.RemoteStatus = true
+			if not Success then
+				warn(string.format("%s : %s", remote.Name, tostring(Error)))
+			end
+		end)
 	end
+
+	Shared.Variables.RemoteStatus = true
 end
 
 function Shared:SetUp()
-	if Shared.Variables.SetUp == false then
-		Shared.Variables.SetUp = true
-
-		Shared:CreateEvents()
-
-		if Shared.Variables.RemoteStatus ~= true then
-			return false
-		end
-
-		return true
-	else
+	if Shared.Variables.SetUp == true then
 		return false
 	end
+
+	Shared.Variables.SetUp = true
+	Shared:CreateEvents()
+	return Shared.Variables.RemoteStatus
 end
 
 return Shared

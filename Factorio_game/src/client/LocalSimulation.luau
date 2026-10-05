@@ -1,122 +1,118 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+
 local AssetsFolder = ReplicatedStorage:WaitForChild("Assets")
 local SimulationRem = AssetsFolder.Events.Simulation
-local GuiInteractionRem = AssetsFolder.Events.GuiInteraction
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer.PlayerGui
-local GridMap2D = require(ReplicatedStorage.GridMap2D)
-local GameLogic = require(ReplicatedStorage.GameLogic)
-local ItemsDatabase = require(ReplicatedStorage.ItemsDatabase)
-local ClientDataDisplay = require(ReplicatedStorage.ClientDataDisplay)
-local GameGrid, SimTask, SimData
-local CurSelectedMachine = { x = 0, y = 0 }
+
+local GridMap2D = require(ReplicatedStorage:WaitForChild("GridMap2D"))
+local GameLogic = require(ReplicatedStorage:WaitForChild("GameLogic"))
+local ClientDataDisplay = require(ReplicatedStorage:WaitForChild("ClientDataDisplay"))
+
+local CELL_SIZE = 4.5
+local GRID_ORIGIN = Vector3.new(10, 0.5, 10)
+
+local SimData: any = nil
+local SimTask: thread? = nil
 local GameRunning = false
+local CurSelectedMachine = { x = 0, y = 0 }
 
-local function formatNumber(num)
-	return string.gsub(string.format("%.3f", num), "%.?0+$", "")
+local function stopSimulation()
+	if SimTask then
+		task.cancel(SimTask)
+		SimTask = nil
+	end
+	GameRunning = false
 end
 
-local StatsGui = PlayerGui:WaitForChild("Test")
+local function startSimulation()
+	if SimTask then
+		return
+	end
+	GameRunning = true
+	SimTask = task.spawn(function()
+		while GameRunning and SimData do
+			local stats = SimData.Stats
+			GameLogic:Tick(SimData)
 
-local function LocalGameLoop()
-	while true do
-		GameLogic:Tick(SimData)
-
-		local SimStats = SimData["Stats"]
-
-		ClientDataDisplay:UpdateStats({
-			CurFlux = SimStats["CurFlux"],
-			MaxFlux = SimStats["MaxFlux"],
-			CurMana = SimStats["CurMana"],
-			MaxMana = SimStats["MaxMana"],
-			TickPerSec = SimStats["TickPerSec"],
-		})
-		if CurSelectedMachine["x"] ~= 0 then -- if x is zero the position is wrong to begin with dont bother checking y
-			ClientDataDisplay:UpdateMachineStats({
-				SimData["GameGrid"]:GetValue(CurSelectedMachine["x"], CurSelectedMachine["y"]),
+			ClientDataDisplay:UpdateStats({
+				CurFlux = stats.CurFlux,
+				MaxFlux = stats.MaxFlux,
+				CurMana = stats.CurMana,
+				MaxMana = stats.MaxMana,
+				TickPerSec = stats.TickPerSec,
 			})
-		end
 
-		task.wait(1 / SimStats["TickPerSec"])
+			if CurSelectedMachine.x ~= 0 then
+				local cell = SimData.GameGrid:GetValue(CurSelectedMachine.x, CurSelectedMachine.y)
+				ClientDataDisplay:UpdateMachineStats(cell and cell[1] or nil)
+			end
+
+			task.wait(1 / stats.TickPerSec)
+		end
+	end)
+end
+
+local function loadLayout(snapshot: any)
+	GameLogic:ClearAllItems(SimData.GameGrid)
+	for _, entry in ipairs(snapshot.CurrentLayout) do
+		if
+			typeof(entry) == "table"
+			and typeof(entry.x) == "number"
+			and typeof(entry.y) == "number"
+			and typeof(entry.itemID) == "string"
+		then
+			GameLogic:AddItem(entry.x, entry.y, entry.itemID, SimData.GameGrid, entry.item)
+		end
 	end
 end
 
-local function HandleSimulationEvent(Mode, ...)
+local function handleSimulationEvent(mode: string, ...)
 	local args = { ... }
-	if Mode == "Setup" then
+
+	if mode == "Setup" then
 		SimData = args[1]
+		local stats = SimData.Stats
+		SimData.GameGrid = GridMap2D.new(stats.LayoutWidth, stats.LayoutHeight, CELL_SIZE, GRID_ORIGIN)
 
-		local SimStats = SimData["Stats"]
-		SimData["GameGrid"] =
-			GridMap2D.new(SimStats["LayoutWidth"], SimStats["LayoutHeight"], 4.5, Vector3.new(10, 0.5, 10), false)
+		ClientDataDisplay:UpdateStats(stats)
+		loadLayout(SimData)
+		startSimulation()
+	elseif mode == "Correct" then
+		local wasRunning = GameRunning
+		stopSimulation()
 
-		ClientDataDisplay:UpdateStats(SimStats)
+		local snapshot = args[1]
+		SimData.BoughtUpgrades = snapshot.BoughtUpgrades
+		SimData.Stats = snapshot.Stats
+		SimData.SavedLayouts = snapshot.SavedLayouts
+		loadLayout(snapshot)
 
-		local curWidth = SimStats["LayoutWidth"]
-
-		local CurLayout = SimData["CurrentLayout"]
-		for y, Table in CurLayout do
-			for x, Table2 in Table do
-				if next(Table2) ~= nil then
-					GameLogic:AddItem(x, y, Table2[1]["ItemID"], SimData["GameGrid"], Table2[1])
-				end
-			end
-		end
-
-		SimTask = task.spawn(LocalGameLoop)
-		GameRunning = true
-	elseif Mode == "Correct" then
-		if SimTask ~= nil then
-			GameRunning = false
-			task.cancel(SimTask)
-		end
-
-		local CorrectSimData = args[1]
-		SimData["BoughtUpgrades"] = CorrectSimData["BoughtUpgrades"]
-		SimData["Stats"] = CorrectSimData["Stats"]
-		SimData["SavedLayouts"] = CorrectSimData["SavedLayouts"]
-		local CorrectLayout = CorrectSimData["CurrentLayout"]
-		for y, Table in CorrectLayout do
-			for x, Table2 in Table do
-				if next(Table2) ~= nil then
-					GameLogic:UpdateItem(x, y, SimData["GameGrid"], Table2[1])
-				else
-					GameLogic:UpdateItem(x, y, SimData["GameGrid"], nil)
-				end
-			end
-		end
-
-		local SimStats = SimData["Stats"]
-		ClientDataDisplay:UpdateStats(SimStats)
-
-		if GameRunning == true then
-			SimTask = task.spawn(LocalGameLoop)
-			GameRunning = true
+		ClientDataDisplay:UpdateStats(SimData.Stats)
+		if wasRunning then
+			startSimulation()
 		end
 	end
 end
 
-SimulationRem.OnClientEvent:Connect(HandleSimulationEvent)
+SimulationRem.OnClientEvent:Connect(handleSimulationEvent)
 
-LocalPlayer.PlayerScripts.SimPause.Event:Connect(function(Running)
-	if Running == false then
-		if SimTask == nil then
-			return
-		end
-		GameRunning = false
-		SimTask = task.cancel(SimTask)
-	elseif Running == true then
-		SimTask = task.spawn(LocalGameLoop)
-		GameRunning = true
+local simPause = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("SimPause")
+simPause.Event:Connect(function(running: boolean)
+	if running == false then
+		stopSimulation()
+	elseif running == true then
+		startSimulation()
 	end
 end)
 
 LocalPlayer:GetAttributeChangedSignal("CurSelectedX"):Connect(function()
-	CurSelectedMachine["x"] = LocalPlayer:GetAttribute("CurSelectedX")
+	CurSelectedMachine.x = LocalPlayer:GetAttribute("CurSelectedX") or 0
 end)
 
 LocalPlayer:GetAttributeChangedSignal("CurSelectedY"):Connect(function()
-	CurSelectedMachine["y"] = LocalPlayer:GetAttribute("CurSelectedY")
+	CurSelectedMachine.y = LocalPlayer:GetAttribute("CurSelectedY") or 0
 end)

@@ -16,11 +16,7 @@ local RarityColor = {
 }
 
 local function shallowCopy(original)
-	local copy = {}
-	for key, value in pairs(original) do
-		copy[key] = value
-	end
-	return copy
+	return table.clone(original)
 end
 
 local function PointInPart(point, part)
@@ -61,7 +57,7 @@ local function DisplayUnit(model)
 	part.Parent = nil
 	while Model.Parent ~= nil do
 		Model:SetPrimaryPartCFrame(Model.PrimaryPart.CFrame * CFrame.fromEulerAnglesXYZ(0, -0.015, 0))
-		wait()
+		task.wait()
 	end
 end
 
@@ -75,8 +71,8 @@ local function ButtonsDebounce(Type, Debounce)
 			for _, v in ipairs(TargetsUi.Allies:GetChildren()) do
 				if not v:IsA("UIGridLayout") then
 					v.Active = true
-					for _, v in pairs(AllyConnections) do
-						v:Disconnect()
+					for _, connection in pairs(AllyConnections) do
+						connection:Disconnect()
 					end
 					v.AutoButtonColor = true
 					v.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -104,8 +100,8 @@ local function ButtonsDebounce(Type, Debounce)
 			for _, v in ipairs(TargetsUi.Enemies:GetChildren()) do
 				if not v:IsA("UIGridLayout") then
 					v.Active = true
-					for _, v in pairs(EnemyConnections) do
-						v:Disconnect()
+					for _, connection in pairs(EnemyConnections) do
+						connection:Disconnect()
 					end
 					v.AutoButtonColor = true
 					v.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -138,14 +134,14 @@ local function buttonlogic(Index, targetButton, buttondebounce)
 	if CurSelection ~= Char then
 		charinfo.CharName.Text = string.format("%s - LVL %i", Char[1].Name, Char[1].Level)
 		charinfo.HealthBarBG.HealthAmount.Text = string.format("%i/%i", Char[1]["Current Health"], Char[1].Health)
-		charinfo.HealthBarBG.HealthBar.Size = UDim2.new(Char[1]["Current Health"] / Char[1].Health, 0, 1, 0)
+		charinfo.HealthBarBG.HealthBar.Size = UDim2.fromScale(Char[1]["Current Health"] / Char[1].Health, 1)
 		charinfo.HealthBarBG.HealthBar.BackgroundColor3 =
 			Color3.fromRGB(214, 0, 0):lerp(Color3.fromRGB(0, 170, 0), Char[1]["Current Health"] / Char[1].Health)
-		if charinfo.Position ~= UDim2.new(-0.01, 0, 0.32, 0) then
+		if charinfo.Position ~= UDim2.fromScale(-0.01, 0.32) then
 			local tween = ts:Create(
 				charinfo,
 				TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Position = UDim2.new(-0.01, 0, 0.32, 0) }
+				{ Position = UDim2.fromScale(-0.01, 0.32) }
 			)
 			tween:Play()
 		end
@@ -174,7 +170,7 @@ local function buttonlogic(Index, targetButton, buttondebounce)
 			local tween = ts:Create(
 				charinfo,
 				TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-				{ Position = UDim2.new(-0.21, 0, 0.32, 0) }
+				{ Position = UDim2.fromScale(-0.21, 0.32) }
 			)
 			tween:Play()
 		end
@@ -246,7 +242,7 @@ function Gui:SetupSkills(SkillTable, Debounce)
 		local tween = ts:Create(
 			MovesGui.Parent.Forfeit,
 			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-			{ Position = UDim2.new(0.09, 0, 0.22, 0) }
+			{ Position = UDim2.fromScale(0.09, 0.22) }
 		)
 		tween:Play()
 		MovesGui.DescriptionBG.Description.SkillName.Text = ""
@@ -263,9 +259,9 @@ function Gui:SetupSkills(SkillTable, Debounce)
 				temp.Darken.Visible = true
 			end
 			temp.SkillImage.MouseButton1Click:Connect(function()
-				for _, v in ipairs(MovesGui.SkillList:GetChildren()) do
-					if not v:IsA("UIGridLayout") and v ~= temp then
-						v.BackgroundColor3 = Color3.fromRGB(132, 108, 0)
+				for _, skillButton in ipairs(MovesGui.SkillList:GetChildren()) do
+					if not skillButton:IsA("UIGridLayout") and skillButton ~= temp then
+						skillButton.BackgroundColor3 = Color3.fromRGB(132, 108, 0)
 					end
 				end
 				if v["CurCD"] == 0 then
@@ -287,56 +283,56 @@ function Gui:SetupSkills(SkillTable, Debounce)
 					MovesGui.DescriptionBG.Description.Hourglass.Visible = true
 					MovesGui.DescriptionBG.Description.SkillCD.Text = string.format("%i/%i", v["CurCD"], v["BaseCD"])
 				end
-				local tween = ts:Create(
+				local hoverTween = ts:Create(
 					MovesGui.DescriptionBG,
 					TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-					{ Size = UDim2.new(0.789, 0, 1.232, 0), Position = UDim2.new(0.098, 0, -1.137, 0) }
+					{ Size = UDim2.fromScale(0.789, 1.232), Position = UDim2.fromScale(0.098, -1.137) }
 				)
-				tween:Play()
+				hoverTween:Play()
 			end)
 			temp.SkillImage.MouseLeave:Connect(function()
 				MovesGui.DescriptionBG.Description.SkillName.Text = ""
 				MovesGui.DescriptionBG.Description.SkillDescription.Text = ""
 				MovesGui.DescriptionBG.Description.Hourglass.Visible = false
 				MovesGui.DescriptionBG.Description.SkillCD.Text = ""
-				local tween = ts:Create(
+				local leaveTween = ts:Create(
 					MovesGui.DescriptionBG,
 					TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-					{ Size = UDim2.new(0.789, 0, 0, 0), Position = UDim2.new(0.098, 0, 0.107, 0) }
+					{ Size = UDim2.fromScale(0.789, 0), Position = UDim2.fromScale(0.098, 0.107) }
 				)
-				tween:Play()
+				leaveTween:Play()
 			end)
 
 			temp.Parent = MovesGui.SkillList
 			temp.Visible = true
 		end
-		if MovesGui.Position ~= UDim2.new(0.696, 0, 0.78, 0) then
-			local tween = ts:Create(
+		if MovesGui.Position ~= UDim2.fromScale(0.696, 0.78) then
+			local positionTween = ts:Create(
 				MovesGui,
 				TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.InOut),
-				{ Position = UDim2.new(0.696, 0, 0.78, 0) }
+				{ Position = UDim2.fromScale(0.696, 0.78) }
 			)
-			tween:Play()
-			tween.Completed:Wait()
+			positionTween:Play()
+			positionTween.Completed:Wait()
 		end
 	else
 		MovesGui.DescriptionBG.Description.SkillName.Text = ""
 		MovesGui.DescriptionBG.Description.SkillDescription.Text = ""
 		MovesGui.DescriptionBG.Description.SkillCD.Text = ""
-		local tween = ts:Create(
+		local forfeitTween = ts:Create(
 			MovesGui.Parent.Forfeit,
 			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-			{ Position = UDim2.new(-0.1, 0, 0.22, 0) }
+			{ Position = UDim2.fromScale(-0.1, 0.22) }
 		)
-		tween:Play()
+		forfeitTween:Play()
 
-		local tween = ts:Create(
+		local closeTween = ts:Create(
 			player.PlayerGui.BattleGui.MovesGui,
 			TweenInfo.new(1, Enum.EasingStyle.Back, Enum.EasingDirection.InOut),
-			{ Position = UDim2.new(1.1, 0, 0.78, 0) }
+			{ Position = UDim2.fromScale(1.1, 0.78) }
 		)
-		tween:Play()
-		tween.Completed:Wait()
+		closeTween:Play()
+		closeTween.Completed:Wait()
 		for _, v in ipairs(MovesGui.SkillList:GetChildren()) do
 			if not v:IsA("UIGridLayout") then
 				v.Parent = nil
@@ -368,9 +364,9 @@ function Gui:CreateCharUi(Chars, Type, _Specific)
 			targetButton.Name = string.format("%s%i", Char[1].Name, Index)
 			targetButton.Text = Char[1].Name
 			targetButton.Parent = Char[2] == "Ally" and TargetsUi.Allies or TargetsUi.Enemies
-			targetButton.HealthBarBG.Position = targetButton.Parent == TargetsUi.Allies and UDim2.new(0.5, 0, -0.1, 0)
+			targetButton.HealthBarBG.Position = targetButton.Parent == TargetsUi.Allies and UDim2.fromScale(0.5, -0.1)
 				or targetButton.HealthBarBG.Position
-			targetButton.HealthBarBG.HealthBar.Size = UDim2.new(Char[1]["Current Health"] / Char[1].Health, 0, 1, 0)
+			targetButton.HealthBarBG.HealthBar.Size = UDim2.fromScale(Char[1]["Current Health"] / Char[1].Health, 1)
 			targetButton.HealthBarBG.HealthBar.BackgroundColor3 =
 				Color3.fromRGB(214, 0, 0):lerp(Color3.fromRGB(0, 170, 0), Char[1]["Current Health"] / Char[1].Health)
 			targetButton.Visible = true
@@ -403,7 +399,7 @@ function Gui:CreateCharUi(Chars, Type, _Specific)
 				charButton.HealthBarBG.HealthBar,
 				TweenInfo.new(1, Enum.EasingStyle.Bounce, Enum.EasingDirection.InOut),
 				{
-					Size = UDim2.new(_Specific[3]["Current Health"] / _Specific[3].Health, 0, 1, 0),
+					Size = UDim2.fromScale(_Specific[3]["Current Health"] / _Specific[3].Health, 1),
 					BackgroundColor3 = Color3.fromRGB(214, 0, 0):lerp(
 						Color3.fromRGB(0, 170, 0),
 						_Specific[3]["Current Health"] / _Specific[3].Health
@@ -417,12 +413,12 @@ function Gui:CreateCharUi(Chars, Type, _Specific)
 			RenderMod:DestroyPointers(player, "Specific", string.format("%s%iPointer", _Specific[1], _Specific[2]))
 			player.PlayerGui.BattleGui.Order[string.format("%i%s", _Specific[2], _Specific[3].Name)].Parent = nil
 
-			local charButton = TargetsUi.Allies:FindFirstChild(string.format("%s%i", _Specific[3].Name, _Specific[2]))
-			if charButton == nil then
-				charButton = TargetsUi.Enemies:FindFirstChild(string.format("%s%i", _Specific[3].Name, _Specific[2]))
+			local deadButton = TargetsUi.Allies:FindFirstChild(string.format("%s%i", _Specific[3].Name, _Specific[2]))
+			if deadButton == nil then
+				deadButton = TargetsUi.Enemies:FindFirstChild(string.format("%s%i", _Specific[3].Name, _Specific[2]))
 			end
-			if charButton then
-				charButton.Parent = nil
+			if deadButton then
+				deadButton.Parent = nil
 			end
 			CharStats[_Specific[2]] = nil
 		end
@@ -447,7 +443,7 @@ function Gui:CreateCharUi(Chars, Type, _Specific)
 		local tween = ts:Create(
 			TargetsUi.CharacterInfo,
 			TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-			{ Position = UDim2.new(-0.21, 0, 0.209, 0) }
+			{ Position = UDim2.fromScale(-0.21, 0.209) }
 		)
 		tween:Play()
 		tween.Completed:Wait()
@@ -461,13 +457,13 @@ function Gui:UpdateCurrency(Type, Amount)
 		if Type == "Gold" then
 			for i = 0, Amount, math.ceil(Amount / 12) do
 				Currencies.Gold.Text = string.format("%i G", i)
-				wait()
+				task.wait()
 			end
 			Currencies.Gold.Text = tostring(Amount .. " G")
 		elseif Type == "Crystal" then
 			for i = 0, Amount, math.ceil(Amount / 12) do
 				Currencies.Crystal.Text = string.format("%i C", i)
-				wait()
+				task.wait()
 			end
 			Currencies.Crystal.Text = tostring(Amount .. " C")
 		end
@@ -568,7 +564,7 @@ function Gui:CreateInventoryUi(Type, Table)
 							InventoryUi.UnitInfo.Equip.Text = "Equip"
 							game.ReplicatedStorage.SharedRemotes.UnitHandle:FireServer("UnitUnequip", Unit.Name, Index)
 						end
-						wait(0.5)
+						task.wait(0.5)
 						EquipDebounce = false
 					end
 				end)
@@ -632,14 +628,14 @@ function Gui:SetUp()
 					game.ReplicatedStorage.SharedRemotes.CombatHandle:FireServer("Forefit")
 					forfeit.Text = "Forfeit"
 					forfeit.AutoButtonColor = false
-					wait(4)
+					task.wait(4)
 					debounce = false
 					forfeit.AutoButtonColor = true
 				else
 					clicked = true
 					forfeit.Text = "Are you sure you want to forfeit the battle?"
 					coroutine.wrap(function()
-						wait(4)
+						task.wait(4)
 						clicked = false
 						forfeit.Text = "Forfeit"
 					end)()
@@ -720,10 +716,6 @@ function Gui:SetUp()
 			end
 		end)
 
-		Tab.Journal.MouseButton1Click:Connect(function()
-			print("not done")
-		end)
-
 		Tab.Summon.MouseButton1Click:Connect(function()
 			if db3 == false then
 				db3 = true
@@ -738,7 +730,7 @@ function Gui:SetUp()
 
 				local fade = Instance.new("Frame")
 				fade.ZIndex = 99
-				fade.Size = UDim2.new(1, 0, 1, 0)
+				fade.Size = UDim2.fromScale(1, 1)
 				fade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 				fade.BackgroundTransparency = 1
 				local tween = ts:Create(
@@ -767,14 +759,14 @@ function Gui:SetUp()
 				workspace.Camera.CameraType = Enum.CameraType.Scriptable
 				workspace.Camera.CFrame = workspace.SummonMap.CameraPosition.CFrame
 
-				local tween = ts:Create(
+				local fadeBackTween = ts:Create(
 					fade,
 					TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 					{ BackgroundTransparency = 1 }
 				)
 				fade.Parent = player.PlayerGui.BattleGui
-				tween:Play()
-				tween.Completed:Wait()
+				fadeBackTween:Play()
+				fadeBackTween.Completed:Wait()
 				fade.Parent = nil
 
 				db3 = false
@@ -792,7 +784,7 @@ function Gui:SetUp()
 
 				local fade = Instance.new("Frame")
 				fade.ZIndex = 99
-				fade.Size = UDim2.new(1, 0, 1, 0)
+				fade.Size = UDim2.fromScale(1, 1)
 				fade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 				fade.BackgroundTransparency = 1
 				local tween = ts:Create(
@@ -809,14 +801,14 @@ function Gui:SetUp()
 				workspace.Camera.CameraType = Enum.CameraType.Custom
 				workspace.Camera.CameraSubject = player.Character.Humanoid
 
-				local tween = ts:Create(
+				local closeFadeTween = ts:Create(
 					fade,
 					TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 					{ BackgroundTransparency = 1 }
 				)
 				fade.Parent = player.PlayerGui.BattleGui
-				tween:Play()
-				tween.Completed:Wait()
+				closeFadeTween:Play()
+				closeFadeTween.Completed:Wait()
 				fade.Parent = nil
 
 				player.Character.Humanoid.WalkSpeed = oldspd

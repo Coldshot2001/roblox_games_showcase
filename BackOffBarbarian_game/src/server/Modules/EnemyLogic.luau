@@ -1,3 +1,5 @@
+--!strict
+
 local AStar = require(game.ServerScriptService.Modules.AStar)
 
 local EnemyLogic = {}
@@ -14,6 +16,8 @@ function EnemyLogic.new(enemy: Model, enemyId: string)
 	self.getPlayerPos = nil
 	self.onMoved = nil
 	self.MOVEMENT_DELAY = 2.5
+	self.running = false
+	self.attacking = false
 	return setmetatable(self, EnemyLogic)
 end
 
@@ -22,14 +26,13 @@ local function GetTarget(startPos, targets, getPlayerPos)
 	local closestPos = nil
 	for _, player in pairs(targets) do
 		local pos = getPlayerPos(player)
-		if pos == nil then
-			continue
-		end
-		local posVec = Vector3.new(pos[1], pos[2], 0)
-		local dist = (startPos - posVec).Magnitude
-		if dist < closestDist then
-			closestDist = dist
-			closestPos = posVec
+		if pos ~= nil then
+			local posVec = Vector3.new(pos[1], pos[2], 0)
+			local dist = (startPos - posVec).Magnitude
+			if dist < closestDist then
+				closestDist = dist
+				closestPos = posVec
+			end
 		end
 	end
 	return closestPos
@@ -44,26 +47,39 @@ local function PositionModel(x, y, model, gridHeight, originPosition)
 end
 
 local function Move(startPos, endPos, grid, model, originPosition)
-	local path = AStar.path({ x = startPos.X, y = startPos.Y }, { x = endPos.X, y = endPos.Y }, grid, false)
+	local path = AStar.path({ x = startPos.X, y = startPos.Y }, { x = endPos.X, y = endPos.Y }, grid)
+	if not path or #path < 2 then
+		return startPos
+	end
+
 	local nextStep = path[2]
-	PositionModel(nextStep.x, nextStep.y, model, grid[nextStep.x][nextStep.y]["Position"], originPosition)
+	local cell = grid[nextStep.x] and grid[nextStep.x][nextStep.y]
+	if not cell then
+		return startPos
+	end
+
+	PositionModel(nextStep.x, nextStep.y, model, cell["Position"], originPosition)
 	return Vector3.new(nextStep.x, nextStep.y, 0)
 end
 
-local function ChooseAction(startPos, endPos, grid, model, originPosition)
+local function ChooseAction(self, startPos, endPos, grid, model, originPosition)
 	local dist = (startPos - endPos).Magnitude
 	if dist == 1 then
-		-- Adjacent to target
-		print("GG MY GUY")
+		self.attacking = true
 		return startPos
 	elseif dist > 1 then
+		self.attacking = false
 		return Move(startPos, endPos, grid, model, originPosition)
 	end
+	self.attacking = false
 	return startPos
 end
 
 function EnemyLogic:Cleanup()
-	-- cancel any running tasks, clean up model, etc.
+	self.running = false
+	if self.model then
+		self.model:Destroy()
+	end
 end
 
 function EnemyLogic:UpdateTargets(players)
@@ -85,18 +101,17 @@ function EnemyLogic:Spawn(Location, MapName, MapData, getPlayerPos, onMoved)
 		curMap.originPosition
 	)
 
-	-- Broadcast initial position
 	if self.onMoved then
 		self.onMoved(self.enemyId, self.pos.X, self.pos.Y, self.map)
 	end
 
-	while true do
+	self.running = true
+	while self.running do
 		self.target = GetTarget(self.pos, self.possibleTargets, self.getPlayerPos)
 		if self.target then
-			local newPos = ChooseAction(self.pos, self.target, curMap.GridArray, self.model, curMap.originPosition)
+			local newPos = ChooseAction(self, self.pos, self.target, curMap.GridArray, self.model, curMap.originPosition)
 			if newPos ~= self.pos then
 				self.pos = newPos
-				-- Broadcast movement to all clients on this map
 				if self.onMoved then
 					self.onMoved(self.enemyId, self.pos.X, self.pos.Y, self.map)
 				end

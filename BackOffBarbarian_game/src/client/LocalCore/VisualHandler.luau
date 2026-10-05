@@ -31,7 +31,7 @@ local function CellExists(mapName, x, y)
 		return false
 	end
 	local cell = row[y]
-	return cell ~= nil and cell ~= -math.huge
+	return cell ~= nil
 end
 
 local function SetOccupied(mapName, x, y, occupied)
@@ -53,7 +53,7 @@ local function BuildCellCFrame(mapName, gridX, gridY, plateOffset)
 		return nil
 	end
 	local cell = cache.GridArray[gridX] and cache.GridArray[gridX][gridY]
-	if cell == nil or cell == -math.huge then
+	if cell == nil then
 		return nil
 	end
 	local origin = cache.originPosition
@@ -240,7 +240,7 @@ function Visuals:CacheMap(GridArray, cellSize, originPosition, Name)
 
 	for x, tb in pairs(GridArray) do
 		for y, v in pairs(tb) do
-			if v ~= -math.huge then
+			if v ~= nil then
 				local part = TileModel:Clone()
 				local worldX = (x - 1) * cellSize + originPosition.X
 				local worldZ = (y - 1) * cellSize + originPosition.Z
@@ -370,7 +370,7 @@ function Visuals:PredictMove(mapName, fromX, fromY, dir)
 		local nx, ny = fromX + off[1], fromY + off[2]
 		if CellExists(mapName, nx, ny) then
 			local cell = cache.GridArray[nx][ny]
-			if cell ~= -math.huge and cell["Value"] == dir then
+			if cell ~= nil and cell["Value"] == dir then
 				return nx, ny
 			end
 		end

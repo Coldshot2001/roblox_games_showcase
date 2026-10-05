@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer.PlayerGui
@@ -18,15 +17,10 @@ local SimPauseEvent = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Si
 local ItemsDatabase = require(ReplicatedStorage.ItemsDatabase)
 local ClientDataDisplay = require(ReplicatedStorage.ClientDataDisplay)
 local Running = true
--- I added for action handling
+-- action handling
 local PlacementDebounce = time()
 local CurrentState = "Idle"
 local CurrentlySelected = nil
-local SelectionDestroyedHandler = nil
--- I added for adding delay to the runservice
-local Elapsed = 0
-local Rate = 0.25
-local Mouse = LocalPlayer:GetMouse()
 --
 
 local function formatNumber(num)
@@ -82,17 +76,30 @@ local function updateStatsDisplay(SimStats)
 	StatsGui.Stats.Mana.Text = formatNumber(SimStats.CurMana) .. "/" .. formatNumber(SimStats.MaxMana)
 end
 
-local function updateMachineStatsDisplay(SimStats)
-	if #SimStats[1] == 0 then
+local function updateMachineStatsDisplay(item)
+	if typeof(item) ~= "table" then
+		clearContainer()
 		return
 	end
-	for k, v in SimStats[1][1] do
-		if type(v) == "userdata" then
+
+	for key, value in pairs(item) do
+		if typeof(value) == "Instance" then
 			continue
 		end
-		local ItemInfoTextClone = Container:FindFirstChild(k)
-		ItemInfoTextClone.Text = k .. ":" .. v
-		ItemInfoTextClone.Parent = Container
+		local label = Container:FindFirstChild(key)
+		if not label then
+			local clone = ItemInfoText:Clone()
+			clone.Name = key
+			clone.Parent = Container
+			label = clone
+		end
+		label.Text = key .. ":" .. tostring(value)
+	end
+
+	for _, child in ipairs(Container:GetChildren()) do
+		if child:IsA("TextLabel") and item[child.Name] == nil then
+			child:Destroy()
+		end
 	end
 end
 
@@ -293,9 +300,9 @@ local function handleMouseAction(inputObject)
 			local x = result.Instance.Parent:GetAttribute("x")
 			local y = result.Instance.Parent:GetAttribute("y")
 
-			local PositionInfo = ActionRemFun:InvokeServer("mouseAction", CurrentState, { x = x, y = y })
-			if PositionInfo then
-				GuiInteractionRem:FireServer("Sell", PositionInfo, x, y)
+			local itemInfo = ActionRemFun:InvokeServer("mouseAction", CurrentState, { x = x, y = y })
+			if itemInfo then
+				GuiInteractionRem:FireServer("Sell", x, y)
 			end
 		end
 	end
@@ -308,7 +315,3 @@ local function handleAction(actionName, inputState, inputObject)
 end
 
 ContextActionService:BindAction("mouseAction", handleAction, false, Enum.UserInputType.MouseButton1)
-
-local function HandleGuiEvent(Mode, ...) end
-
-GuiInteractionRem.OnClientEvent:Connect(HandleGuiEvent)

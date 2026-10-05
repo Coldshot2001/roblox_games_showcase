@@ -144,7 +144,7 @@ function Render:CreateCharModel(Model, Parent, _Offset)
 	else
 		ModelClone:SetPrimaryPartCFrame(Parent.CFrame)
 	end
-	wait()
+	task.wait()
 	ModelClone.PrimaryPart = oldppart
 	h.Parent = nil
 	ModelClone.Parent = Parent

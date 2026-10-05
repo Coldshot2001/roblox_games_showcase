@@ -1,34 +1,39 @@
-local Character = {}
+--!strict
+
 local Abilities = require(game.ServerStorage.AbilitiesDatabase).Abilities
+
+local Character = {}
 Character.__index = Character
 
-local function shallowCopy(original)
+local function copySkills(skills: any): any
 	local copy = {}
-	for key, value in pairs(original) do
-		copy[key] = value
+	for key, skill in pairs(skills or {}) do
+		copy[key] = table.clone(skill)
 	end
 	return copy
 end
 
-function Character.new(stat, model)
-	local char = {}
-
-	if type(stat) ~= "table" then
-		warn(string.format("Stats are a %q, not a table!", tostring(type(stat))))
+function Character.new(stat: any, model: any): any
+	if typeof(stat) ~= "table" then
+		warn(string.format("CharacterClass: stats are a %s, not a table", typeof(stat)))
 		return nil
-	elseif not model.ClassName or model.ClassName ~= "Model" or not model then
-		warn(string.format("%q is not a character model!", tostring(model)))
-		return nil
-	elseif type(stat) == "table" and model.ClassName == "Model" then
-		for i, v in pairs(stat) do
-			char[i] = v
-		end
-		char.Skills = Abilities[char.Name]
-		char.Model = model
-		--char.Name = nil
-		setmetatable(char, Character)
-		return char
 	end
+	if typeof(model) ~= "Instance" or not model:IsA("Model") then
+		warn(string.format("CharacterClass: %s is not a character model", tostring(model)))
+		return nil
+	end
+
+	local char = table.clone(stat)
+	char.Skills = copySkills(Abilities[char.Name])
+	char.Model = model
+	return setmetatable(char, Character)
+end
+
+function Character.clone(template: any): any
+	local char = table.clone(template)
+	char.Skills = copySkills(template.Skills)
+	char.Model = template.Model
+	return setmetatable(char, Character)
 end
 
 return Character

@@ -1,1 +1,1 @@
-A module which ive made to help me across a bunch of different projects where I required a grid.
+A module which ive made to help me across a bunch of different projects where I required a grid. A cell is either a table that holds something or nil when its empty, and every read is bounds checked, so you never get a stray number back to index.

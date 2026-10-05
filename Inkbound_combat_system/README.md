@@ -1,1 +1,1 @@
-An unfinished combat system from back when this game called "Inkbound" released. I liked how everyone was able to take turns at the same time and how the movement system functioned so I've recreated it. However, all that I finished was in fact the movement system.
+An unfinished combat system from back when this game called "Inkbound" released. I liked how everyone was able to take turns at the same time and how the movement system functioned so I've recreated it.

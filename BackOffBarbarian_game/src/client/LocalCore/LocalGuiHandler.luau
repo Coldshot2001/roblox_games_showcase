@@ -10,11 +10,10 @@ function LocalGui:StartUp()
 			local MAX_RETRIES = 8
 
 			local StarterGui = game:GetService("StarterGui")
-			local RunService = game:GetService("RunService")
 
 			local function coreCall(method, ...)
 				local result = {}
-				for retries = 1, MAX_RETRIES do
+				for _ = 1, MAX_RETRIES do
 					result = { pcall(StarterGui[method], StarterGui, ...) }
 					if result[1] then
 						break
@@ -25,7 +24,6 @@ function LocalGui:StartUp()
 			end
 
 			coreCall("SetCore", "ResetButtonCallback", false)
-			RunService = nil
 			StarterGui = nil
 		end
 		LocalGui.SetUp = true
@@ -48,7 +46,7 @@ function LocalGui:TimerMode(Mode: boolean, Time: number)
 		CurTime = Time
 		local TimerLabel = LPlr.PlayerGui:WaitForChild("Main").MainFrame.Timer
 		TimerEv = RunService.Heartbeat:Connect(function()
-			local TimePassed = tick() - CurTime
+			local TimePassed = workspace:GetServerTimeNow() - CurTime
 			local m = math.floor(TimePassed / 60) -- Minutes
 			local s = math.floor(TimePassed % 60) -- Seconds
 			local ms = math.floor((TimePassed % 1) * 1000) -- Milliseconds

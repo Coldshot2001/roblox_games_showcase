@@ -8,18 +8,19 @@ local Players = game:GetService("Players")
 local GridMap = require(ServerScriptService.Modules.GridMap2D)
 local Solution = require(ServerScriptService.Modules.SolutionGen)
 local EnemyLogic = require(ServerScriptService.Modules.EnemyLogic)
-local GameMaps = ServerStorage.ServerStorage.Maps:GetChildren()
 
 local Packets = require(ReplicatedStorage.SharedModules.Packets)
 local SendMapPacket = Packets.SendMapPacket
 local SendGameDataPacket = Packets.SendGameDataPacket
 
-for i, v in pairs(GameMaps) do
-	if v.Name == "Lobby" then
-		table.remove(GameMaps, i)
-		break
+local GameMaps = {}
+for _, map in ipairs(ServerStorage.ServerStorage.Maps:GetChildren()) do
+	if map.Name ~= "Lobby" then
+		table.insert(GameMaps, map)
 	end
 end
+
+local random = Random.new()
 
 local Data = {}
 
@@ -63,22 +64,62 @@ Data.MapsData = {
 
 local function GetSpawnCFrame(mapName, gridPos, plateOffset)
 	local map = Data.LoadedMaps[mapName]
-	return CFrame.new((gridPos[1] - 1) * 7, map.GridArray[gridPos[1]][gridPos[2]]["Position"], (gridPos[2] - 1) * 7)
+	if not map then
+		return nil
+	end
+	local column = map.GridArray[gridPos[1]]
+	local cell = column and column[gridPos[2]]
+	local height = cell and cell["Position"] or 0
+	return CFrame.new((gridPos[1] - 1) * 7, height, (gridPos[2] - 1) * 7)
 		* CFrame.new(map.originPosition.X, plateOffset, map.originPosition.Z)
 		* CFrame.fromOrientation(0, math.rad(180), 0)
 end
 
-function Data:SaveData(Player: Player) end
+local STORE_NAME = "BackOffBarbarianPlayerData_v1"
+local MAX_ATTEMPTS = 3
+local RETRY_BASE_SECONDS = 2
 
-function Data:LoadData(Player: Player)
-	--check datastore
-	---if exists Data.GameData[Player.UserId] = datastore data
-	----return true
-	---else if datastore data doesnt exist V
-	return false
+local store: any = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(STORE_NAME)
+	end)
+	if ok then
+		store = result
+	else
+		warn(string.format("GameDataMod: DataStore %q is not available (%s)", STORE_NAME, tostring(result)))
+	end
 end
 
-local PlayerData = {
+local function retry(operation: () -> any): (boolean, any)
+	local lastError: any = "DataStore is not available"
+	for attempt = 1, MAX_ATTEMPTS do
+		if store ~= nil then
+			local ok, result = pcall(operation)
+			if ok then
+				return true, result
+			end
+			lastError = result
+		end
+		if attempt < MAX_ATTEMPTS then
+			task.wait(RETRY_BASE_SECONDS * attempt)
+		end
+	end
+	return false, lastError
+end
+
+local function deepCopy(original: any): any
+	if typeof(original) ~= "table" then
+		return original
+	end
+	local copy = {}
+	for key, value in pairs(original) do
+		copy[deepCopy(key)] = deepCopy(value)
+	end
+	return copy
+end
+
+local DefaultPlayerData = {
 	["Plates"] = { "Default" }, --Strings with the plates the plr owns
 	["Poses"] = { "Default" }, --Strings with the character poses the plr owns
 	["Animations"] = { "Default" }, --Strings with the animations the plr owns
@@ -92,9 +133,92 @@ local PlayerData = {
 		["Gold"] = 0,
 	},
 }
-function Data:CreateData(Player: Player)
-	if Data.GameData[Player.UserId] == nil then
-		Data.GameData[Player.UserId] = PlayerData
+
+local function sanitizeSaved(saved: any): any
+	local data = deepCopy(DefaultPlayerData)
+
+	if typeof(saved["Currencies"]) == "table" then
+		for key, _ in pairs(data["Currencies"]) do
+			local savedValue = saved["Currencies"][key]
+			if typeof(savedValue) == "number" and savedValue == savedValue then
+				data["Currencies"][key] = math.max(0, savedValue)
+			end
+		end
+	end
+
+	for _, key in ipairs({ "Plates", "Poses", "Animations" }) do
+		local savedList = saved[key]
+		if typeof(savedList) == "table" then
+			local list = {}
+			for _, item in ipairs(savedList) do
+				if typeof(item) == "string" then
+					table.insert(list, item)
+				end
+			end
+			if #list > 0 then
+				data[key] = list
+			end
+		end
+	end
+
+	if typeof(saved["MaxTime"]) == "number" and saved["MaxTime"] == saved["MaxTime"] then
+		data["MaxTime"] = math.max(0, saved["MaxTime"])
+	end
+
+	if typeof(saved["Equipped"]) == "table" then
+		for key, _ in pairs(data["Equipped"]) do
+			local savedValue = saved["Equipped"][key]
+			if typeof(savedValue) == "string" then
+				data["Equipped"][key] = savedValue
+			end
+		end
+	end
+
+	return data
+end
+
+function Data:SaveData(player: Player): boolean
+	local playerData = Data.GameData[player.UserId]
+	if not playerData then
+		return false
+	end
+
+	local payload = deepCopy(playerData)
+	local ok, err = retry(function()
+		store:UpdateAsync(string.format("player_%d", player.UserId), function()
+			return payload
+		end)
+	end)
+	if not ok then
+		warn(string.format("GameDataMod: could not save %d (%s)", player.UserId, tostring(err)))
+	end
+	return ok
+end
+
+function Data:LoadData(player: Player): boolean
+	local ok, saved = retry(function()
+		return store:GetAsync(string.format("player_%d", player.UserId))
+	end)
+	if not ok or typeof(saved) ~= "table" then
+		return false
+	end
+
+	Data.GameData[player.UserId] = sanitizeSaved(saved)
+	return true
+end
+
+function Data:CreateData(player: Player)
+	if Data.GameData[player.UserId] == nil then
+		Data.GameData[player.UserId] = deepCopy(DefaultPlayerData)
+	end
+end
+
+function Data:SaveAll()
+	for userId in pairs(Data.GameData) do
+		local player = Players:GetPlayerByUserId(userId)
+		if player then
+			Data:SaveData(player)
+		end
 	end
 end
 
@@ -138,7 +262,7 @@ function Data:LoadMap(Map: Model)
 		local gen_Sol = Solution.Generate(max, max)
 		for i = 1, MapGrid.width do
 			for j = 1, MapGrid.height do
-				if MapGrid.GridArray[i][j] ~= -math.huge then
+				if MapGrid.GridArray[i][j] ~= nil then
 					MapGrid.GridArray[i][j]["Value"] = gen_Sol[i][j]
 				end
 			end
@@ -214,14 +338,15 @@ Packets.MovePacket.OnServerEvent:Connect(function(plr, dir)
 		-- Move the character on the server
 		local char = plr.Character
 		if char then
-			local plateOffset = ServerStorage.ServerStorage.Plates
-				:FindFirstChild(Data.GameData[plr.UserId]["Equipped"]["Plate"])
-				:FindFirstChild("TerrainOffset").Value
-			char:PivotTo(
-				CFrame.new((newPos[1] - 1) * 7, map.GridArray[newPos[1]][newPos[2]]["Position"], (newPos[2] - 1) * 7)
-					* CFrame.new(map.originPosition.X, plateOffset, map.originPosition.Z)
-					* CFrame.fromOrientation(0, math.rad(180), 0)
-			)
+			local plate = ServerStorage.ServerStorage.Plates:FindFirstChild(Data.GameData[plr.UserId]["Equipped"]["Plate"])
+			local terrainOffset = plate and plate:FindFirstChild("TerrainOffset")
+			if terrainOffset then
+				char:PivotTo(
+					CFrame.new((newPos[1] - 1) * 7, map.GridArray[newPos[1]][newPos[2]]["Position"], (newPos[2] - 1) * 7)
+						* CFrame.new(map.originPosition.X, terrainOffset.Value, map.originPosition.Z)
+						* CFrame.fromOrientation(0, math.rad(180), 0)
+				)
+			end
 		end
 		-- Confirm move to the moving player
 		Packets.MoveAckPacket:FireClient(plr, true, newPos[1], newPos[2], mapName)
@@ -300,15 +425,23 @@ end
 function Data:EnemySpawn()
 	if Data.RoundData["InProgress"] == true then
 		local CurMapData = Data.MapsData[Data.RoundData["Map"]]
-		local EnemyMdl = ServerStorage.ServerStorage.Enemies:FindFirstChild(CurMapData["EnemyType"]):Clone()
+		local enemyTemplate = CurMapData and ServerStorage.ServerStorage.Enemies:FindFirstChild(CurMapData["EnemyType"])
+		if not enemyTemplate then
+			return
+		end
+		local EnemyMdl = enemyTemplate:Clone()
 		EnemyMdl:PivotTo(CFrame.new(10000, 10000, 10000))
 		EnemyMdl.Parent = workspace
 		CollectionService:AddTag(EnemyMdl, EnemyLogic.TAG_NAME)
-		local SpawnPos = CurMapData["EnemyLocations"][math.random(1, #CurMapData["EnemyLocations"])]
+		local spawnPoints = CurMapData["EnemyLocations"]
+		if not spawnPoints or #spawnPoints == 0 then
+			return
+		end
+		local SpawnPos = spawnPoints[random:NextInteger(1, #spawnPoints)]
 		local AlivePlayers = {}
-		for UserID, Data in pairs(Data.SessionData) do
-			if Data["InGame"] == true then
-				table.insert(AlivePlayers, Players:GetPlayerByUserId(UserID))
+		for userId, sessionData in pairs(Data.SessionData) do
+			if sessionData["InGame"] == true then
+				table.insert(AlivePlayers, Players:GetPlayerByUserId(userId))
 			end
 		end
 
@@ -349,7 +482,6 @@ function Data:PlayerSpawn(Player: Player)
 	Player:LoadCharacterAsync()
 	local chr = Player.Character or Player.CharacterAdded:Wait()
 
-	-- Anchor HRP, disable collisions on everything else — no waits needed
 	local hrp = chr:WaitForChild("HumanoidRootPart")
 	hrp.Anchored = true
 	for _, v in pairs(chr:GetChildren()) do
@@ -360,32 +492,46 @@ function Data:PlayerSpawn(Player: Player)
 	end
 
 	-- Attach plate
-	local Plate =
-		ServerStorage.ServerStorage.Plates:FindFirstChild(Data.GameData[Player.UserId]["Equipped"]["Plate"]):Clone()
+	local playerData = Data.GameData[Player.UserId]
+	local plateTemplate = playerData
+		and ServerStorage.ServerStorage.Plates:FindFirstChild(playerData["Equipped"]["Plate"])
+	if not plateTemplate then
+		warn(string.format("GameDataMod: no plate for %s", Player.Name))
+		return
+	end
+	local Plate = plateTemplate:Clone()
 	Plate.Name = "Plate"
+	local offset = Plate:FindFirstChild("Offset")
 	local weld = Instance.new("Weld")
 	weld.Part0 = hrp
 	weld.Part1 = Plate
-	weld.C1 = CFrame.new(0, Plate:FindFirstChild("Offset").Value, 0)
+	weld.C1 = CFrame.new(0, offset and offset.Value or 0, 0)
 	weld.Parent = Plate
 	Plate.Parent = chr
 
-	-- Pick spawn position and move character immediately
-	math.randomseed(os.clock())
+	-- Pick spawn position
 	local isInGame = Data.SessionData[Player.UserId]["InGame"]
 	local mapName = isInGame and Data.RoundData.Map or "Lobby"
-	local spawns = Data.MapsData[mapName]["SpawnLocations"]
-	local pos = spawns[math.random(1, #spawns)]
+	local mapSpawns = Data.MapsData[mapName] and Data.MapsData[mapName]["SpawnLocations"]
+	if not mapSpawns or #mapSpawns == 0 then
+		warn(string.format("GameDataMod: no spawn points on %s", mapName))
+		return
+	end
+	local pos = mapSpawns[random:NextInteger(1, #mapSpawns)]
 	local posKey = isInGame and "GamePosition" or "LobbyPosition"
 
 	Data.SessionData[Player.UserId][posKey] = pos
-	chr:PivotTo(GetSpawnCFrame(mapName, pos, Plate:FindFirstChild("TerrainOffset").Value))
+
+	local terrainOffset = Plate:FindFirstChild("TerrainOffset")
+	local spawnCFrame = GetSpawnCFrame(mapName, pos, terrainOffset and terrainOffset.Value or 0)
+	if spawnCFrame then
+		chr:PivotTo(spawnCFrame)
+	end
 	Packets.MoveAckPacket:FireClient(Player, true, pos[1], pos[2], mapName)
 end
 
 local function ChooseRandMap()
-	math.randomseed(os.clock())
-	return GameMaps[math.random(1, #GameMaps)]
+	return GameMaps[random:NextInteger(1, #GameMaps)]
 end
 
 local REQUIRED_PLRS = 1
@@ -425,7 +571,7 @@ function Data:RoundEnd()
 	end
 	--calculate everyone's times and send them
 	--maybe show top 3 players
-	local RoundMap = Data:UnloadMap(Data.RoundData["Map"])
+	Data:UnloadMap(Data.RoundData["Map"])
 	Data.RoundData["InProgress"] = false
 	Data.RoundData["StartTime"] = 0
 	Data.RoundData["Map"] = ""
@@ -433,7 +579,7 @@ function Data:RoundEnd()
 end
 
 function Data:RoundStart()
-	Data.RoundData["StartTime"] = tick() --this is done first to account for the delay to fetch
+	Data.RoundData["StartTime"] = workspace:GetServerTimeNow() --this is done first to account for the delay to fetch
 	local ChosenMap = ChooseRandMap()
 	local RoundMap = Data:LoadMap(ChosenMap)
 	Data.RoundData["Map"] = ChosenMap.Name

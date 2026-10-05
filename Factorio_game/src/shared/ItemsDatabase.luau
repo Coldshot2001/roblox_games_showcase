@@ -58,7 +58,6 @@ local module = {
 		["Transfer"] = 16 --opposite of inlet
 	},
 	["9"] = {
-		--https://github.com/cwmonkey/reactor-knockoff/blob/9f3a9c8e2f64829fe5d277b4c1cf93279b8b7c6d/js/app.js#L2134C1-L2134C41
 		["Name"] = "Flux Balancer",
 		["Type"] = "Exchanger",
 		["Cost"] = 160,

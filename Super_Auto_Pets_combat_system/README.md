@@ -1,1 +1,1 @@
-This is a nearly feature complete recreation of the Super Auto Pets combat system, and unlike the rest I do intend to finish this one.
+This is a nearly feature complete recreation of the Super Auto Pets combat system.

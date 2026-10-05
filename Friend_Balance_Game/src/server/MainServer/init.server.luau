@@ -287,6 +287,18 @@ PairEvent.Event:Connect(function(pairTable: { Model }, titleLabel: TextLabel)
 end)
 
 Packet.MovementPacket.listen(function(data, player)
+	if typeof(data) ~= "table" then
+		return
+	end
+	local normal = data.normal
+	local angle = data.angle
+	if typeof(normal) ~= "Vector2" or typeof(angle) ~= "Vector2" then
+		return
+	end
+	if normal.X ~= normal.X or normal.Y ~= normal.Y or angle.X ~= angle.X or angle.Y ~= angle.Y then
+		return
+	end
+
 	local balancerChar = player.Character
 	if not balancerChar then
 		return
@@ -308,8 +320,14 @@ Packet.MovementPacket.listen(function(data, player)
 		return
 	end
 
-	d.leanNormal = data.normal
-	d.targetCF = BASE_OFFSET * CFrame.fromOrientation(math.rad(data.angle.X), 0, math.rad(data.angle.Y))
+	local MAX_TILT_DEGREES = 60
+	d.leanNormal = Vector2.new(math.clamp(normal.X, -1, 1), math.clamp(normal.Y, -1, 1))
+	d.targetCF = BASE_OFFSET
+		* CFrame.fromOrientation(
+			math.rad(math.clamp(angle.X, -MAX_TILT_DEGREES, MAX_TILT_DEGREES)),
+			0,
+			math.rad(math.clamp(angle.Y, -MAX_TILT_DEGREES, MAX_TILT_DEGREES))
+		)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
